@@ -770,37 +770,37 @@ function allowOnlyPositiveDigits(e) {
 
 <style scoped>
 .settings-panel :deep(.q-field--filled .q-field__control) {
-  background: rgba(255, 255, 255, 0.04);
-  color: #e0e0e0;
+  background: var(--app-surface-soft);
+  color: var(--app-text);
 }
 
 .settings-panel :deep(.q-field--filled .q-field__control:focus-within) {
-  box-shadow: 0 0 0 1px rgba(66, 133, 244, 0.9);
+  box-shadow: 0 0 0 1px var(--q-primary);
 }
 
 .settings-panel :deep(.q-field__label) {
-  color: rgba(255, 255, 255, 0.7) !important;
+  color: var(--app-muted) !important;
 }
 
 .settings-panel :deep(.q-field__native) {
-  color: #f5f5f5;
+  color: var(--app-text);
 }
 
 .settings-panel :deep(.q-icon) {
-  color: rgba(96, 102, 109, 0.8);
+  color: var(--app-muted);
 }
 
 .settings-fieldset {
-  border: 1px solid rgba(96, 102, 109, 0.8);
+  border: 1px solid var(--app-border);
   border-radius: 6px;
   padding: 10px 8px 8px;
-  background: rgba(255, 255, 255, 0.02);
-  color: #f5f5f5;
+  background: var(--app-surface-soft);
+  color: var(--app-text);
 }
 
 .settings-fieldset legend {
   padding: 0 6px;
   font-weight: 600;
-  color: rgba(96, 102, 109, 0.8);
+  color: var(--app-muted);
 }
 </style>

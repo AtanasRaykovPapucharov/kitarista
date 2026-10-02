@@ -121,8 +121,8 @@ function drawScale() {
     if (selectedNotes.has(note)) {
       const color =
         selectedNotes.has(note) && note === normalizeNeckNote(props.scale?.[0] || '')
-          ? '#72AC51'
-          : '#96bee6'
+          ? '#29a77b'
+          : '#72b8ee'
       drawNote(tone, color)
     }
   }
@@ -134,7 +134,7 @@ function drawNote(tone, bgcolor, textcolor) {
   let text
   for (const p of tone.points) {
     text = tone.name.substring(0, tone.name.length - 1)
-    ctx.value.fillStyle = bgcolor || '#565857'
+    ctx.value.fillStyle = bgcolor || '#147b83'
     ctx.value.fillRect(p.x, p.y, rectSide, rectSide)
     ctx.value.save()
     ctx.value.fillStyle = textcolor || 'whitesmoke'

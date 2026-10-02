@@ -320,7 +320,7 @@ watch(
     </div>
     <!-- <pre>CH: {{ chords }}</pre> -->
     <div v-if="!chordVariations.length">
-      <header style="margin-left: 90px; color: #000">
+      <header style="margin-left: 90px">
         <strong>{{ chordName.split('-')[0] }}</strong>
         <sup>{{ chordName.split('-')[1] }}</sup>
         <strong>{{ chordName.split('-')[2] }}</strong>

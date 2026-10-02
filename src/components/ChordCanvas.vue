@@ -137,7 +137,7 @@ const drawPoints = (ctx) => {
 <template>
   <!-- <pre>{{ props }}</pre> -->
   <div style="max-width: 340px">
-    <header style="margin-left: 90px; color: black">
+    <header style="margin-left: 90px">
       <strong>{{ name.split('-')[0] }}</strong>
       <sup>{{ name.split('-')[1] }}</sup>
       <strong>{{ name.split('-')[2] }}</strong>

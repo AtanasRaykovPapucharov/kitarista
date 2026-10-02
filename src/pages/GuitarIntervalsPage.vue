@@ -596,7 +596,7 @@ const yForStep = (step) => baseLineY - step * stepSpacing
 const drawLedgerLines = (ctx, x, step) => {
   if (step <= 8) return
 
-  ctx.strokeStyle = '#333'
+  ctx.strokeStyle = '#17344d'
   ctx.lineWidth = 1
 
   for (let s = 10; s <= step; s += 2) {
@@ -627,7 +627,7 @@ const drawStaff = (canvas, row) => {
 
   /* 5 staff lines */
 
-  ctx.strokeStyle = '#333'
+  ctx.strokeStyle = '#17344d'
 
   ctx.lineWidth = 1
   ;[0, 2, 4, 6, 8].forEach((step) => {
@@ -677,7 +677,7 @@ const drawStaff = (canvas, row) => {
 
     ctx.lineWidth = 1.6
 
-    ctx.strokeStyle = '#1a1a2e'
+    ctx.strokeStyle = '#17344d'
 
     ctx.stroke()
 
@@ -687,7 +687,7 @@ const drawStaff = (canvas, row) => {
 
     ctx.beginPath()
 
-    ctx.strokeStyle = '#1a1a2e'
+    ctx.strokeStyle = '#17344d'
 
     ctx.lineWidth = 1.4
 
@@ -721,7 +721,7 @@ const drawStaff = (canvas, row) => {
   if (row.accidental) {
     ctx.font = 'bold 16px sans-serif'
 
-    ctx.fillStyle = '#c0392b'
+    ctx.fillStyle = '#cf4561'
 
     const symbol = row.accidental === 'b' ? '\u266D' : '\u266F'
 
@@ -732,7 +732,7 @@ const drawStaff = (canvas, row) => {
 
   ctx.font = '11px sans-serif'
 
-  ctx.fillStyle = '#555'
+  ctx.fillStyle = '#426b83'
 
   ctx.textAlign = 'center'
 
@@ -1008,8 +1008,8 @@ onMounted(async () => {
 
 .staff-canvas {
   display: block;
-  background: #ffffff;
-  border: 1px solid #e0e0e0;
+  background: var(--app-score-surface);
+  border: 1px solid var(--app-border);
   border-radius: 4px;
   max-width: 100%;
 }
@@ -1017,8 +1017,8 @@ onMounted(async () => {
 .tab-block {
   font-family: 'Roboto Mono', 'Courier New', monospace;
 
-  background: #1e1e1e;
-  color: #d4d4d4;
+  background: var(--app-strong-surface);
+  color: var(--app-strong-text);
 
   padding: 12px;
 
@@ -1039,24 +1039,24 @@ onMounted(async () => {
 
 .intervals-table :deep(th),
 .intervals-table :deep(td) {
-  color: #1f2933;
+  color: var(--app-text);
 }
 
 .intervals-table--dark :deep(th),
 .intervals-table--dark :deep(td) {
-  background: #202327;
-  color: #e4e7eb;
-  border-color: rgba(255, 255, 255, 0.16);
+  background: var(--app-surface);
+  color: var(--app-text);
+  border-color: var(--app-border);
 }
 
 .interval-card {
-  background: #e2e5e8;
-  color: #1f2933;
+  background: var(--app-surface-soft);
+  color: var(--app-text);
 }
 
 .interval-card--dark {
-  background: #202327;
-  color: #e4e7eb;
+  background: var(--app-surface);
+  color: var(--app-text);
 }
 
 .interval-card-heading {
@@ -1064,7 +1064,7 @@ onMounted(async () => {
 }
 
 .interval-card-label {
-  color: #53606d;
+  color: var(--app-muted);
   font-size: 0.75rem;
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -1072,21 +1072,21 @@ onMounted(async () => {
 }
 
 .intervals-mobile-controls {
-  background: #eef1f4;
+  background: var(--app-surface-soft);
 }
 
 .intervals-mobile-controls--dark {
-  background: #17191d;
+  background: var(--app-surface);
 }
 
 .interval-card--dark .interval-card-label {
-  color: #aeb8c4;
+  color: var(--app-muted);
 }
 
 :deep(.intervals-table th),
 :deep(.intervals-table td) {
-  border-right: 1px solid rgba(0, 0, 0, 0.16);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.16);
+  border-right: 1px solid var(--app-border);
+  border-bottom: 1px solid var(--app-border);
 }
 
 :deep(.intervals-table .q-table__middle) {

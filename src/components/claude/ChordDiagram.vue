@@ -72,7 +72,13 @@ const marks = computed(() => {
       class="line"
     />
 
-    <text v-if="baseFret > 1" :x="LEFT - 4" :y="TOP + FRET_H * 0.7" class="fret-label" text-anchor="end">
+    <text
+      v-if="baseFret > 1"
+      :x="LEFT - 4"
+      :y="TOP + FRET_H * 0.7"
+      class="fret-label"
+      text-anchor="end"
+    >
       {{ baseFret }}
     </text>
 
@@ -89,7 +95,7 @@ const marks = computed(() => {
 <style scoped>
 .chord-diagram {
   display: block;
-  color: #bdbdbd;
+  color: var(--app-muted);
 }
 .line {
   stroke: currentColor;

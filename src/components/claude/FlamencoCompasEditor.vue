@@ -570,6 +570,7 @@ function clearAll() {
     ok: { color: 'negative', label: 'Clear' },
   }).onOk(() => {
     audio.stop()
+    sheet.title = ''
     sheet.bars = [newBar(sheet.pattern.length)]
     selected.value = null
     loopBar.value = null
@@ -1153,19 +1154,20 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .fc {
-  --fc-line: rgba(255, 255, 255, 0.08);
-  --fc-blue: #42a5f5;
-  --fc-red: #ef5350;
+  --fc-line: var(--app-border);
+  --fc-blue: #318bd1;
+  --fc-red: var(--q-accent);
   width: 100%;
   max-width: 980px;
   margin: 0 auto;
   padding: 16px;
   box-sizing: border-box;
   border-radius: 6px;
+  color: var(--app-text);
 }
 
 .fc-title :deep(input::placeholder) {
-  color: #757575;
+  color: var(--app-muted);
 }
 
 .fc-tempo {
@@ -1215,7 +1217,7 @@ onBeforeUnmount(() => {
   border-radius: 50%;
   border: 1px solid var(--fc-line);
   background: transparent;
-  color: #9e9e9e;
+  color: var(--app-muted);
   font: inherit;
   font-size: 0.95rem;
   text-align: center;
@@ -1288,7 +1290,7 @@ onBeforeUnmount(() => {
 .fc-bar-name {
   background: transparent;
   border: 0;
-  color: #e0e0e0;
+  color: var(--app-text);
   font: inherit;
   font-size: 0.85rem;
   padding: 2px 0;
@@ -1297,7 +1299,7 @@ onBeforeUnmount(() => {
 }
 
 .fc-bar-name::placeholder {
-  color: #616161;
+  color: var(--app-muted);
 }
 
 .fc-repeat {
@@ -1321,7 +1323,7 @@ onBeforeUnmount(() => {
   padding: 4px 5px 5px;
   border: 1px solid var(--fc-line);
   border-radius: 4px;
-  background: rgba(255, 255, 255, 0.02);
+  background: var(--app-surface);
   color: inherit;
   font: inherit;
   text-align: left;
@@ -1330,11 +1332,11 @@ onBeforeUnmount(() => {
 }
 
 .fc-cell:hover {
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--app-surface-soft);
 }
 
 .fc-cell.accent {
-  background: rgba(66, 165, 245, 0.07);
+  background: var(--app-surface-raised);
 }
 
 .fc-cell.selected {
@@ -1353,7 +1355,7 @@ onBeforeUnmount(() => {
   justify-content: space-between;
   font-size: 0.7rem;
   line-height: 1;
-  color: #757575;
+  color: var(--app-muted);
 }
 
 .fc-cell.accent .fc-cell-label {
@@ -1366,13 +1368,13 @@ onBeforeUnmount(() => {
 }
 
 .fc-stroke {
-  color: #bdbdbd;
+  color: var(--app-muted);
 }
 
 .fc-chord {
   font-size: 1.05rem;
   font-weight: 600;
-  color: #fafafa;
+  color: var(--app-text);
   line-height: 1.3;
   max-width: 100%;
   overflow: hidden;
@@ -1381,7 +1383,7 @@ onBeforeUnmount(() => {
 }
 
 .fc-chord.carried {
-  color: #616161;
+  color: var(--app-muted);
   font-weight: 400;
 }
 
@@ -1401,13 +1403,13 @@ onBeforeUnmount(() => {
 }
 
 .fc-tech {
-  color: #bdbdbd;
+  color: var(--app-muted);
   font-weight: 600;
   letter-spacing: 0.02em;
 }
 
 .fc-text {
-  color: #9e9e9e;
+  color: var(--app-muted);
   font-style: italic;
   margin-top: auto;
 }
@@ -1424,7 +1426,7 @@ onBeforeUnmount(() => {
   z-index: 2;
   margin: 12px -16px -16px;
   padding: 12px 16px 16px;
-  background: #212121;
+  background: var(--app-surface);
   border-top: 1px solid var(--fc-line);
   border-radius: 0 0 6px 6px;
 }
@@ -1433,7 +1435,7 @@ onBeforeUnmount(() => {
   min-width: 150px;
   font: inherit;
   font-size: 0.8rem;
-  color: #e0e0e0;
+  color: var(--app-text);
 }
 
 @media (max-width: 599px) {

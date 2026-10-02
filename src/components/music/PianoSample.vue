@@ -119,7 +119,7 @@ function draw() {
   // Black keys
   for (const k of keys.value.filter((k) => k.isBlack)) {
     pressed = props.blackSelected.includes(k.note)
-    ctx.value.fillStyle = pressed ? '#777' : '#000'
+    ctx.value.fillStyle = pressed ? '#318bd1' : '#000'
     ctx.value.fillRect(k.rect.x, k.rect.y, k.rect.w, k.rect.h)
     ctx.value.strokeStyle = '#000'
     ctx.value.strokeRect(k.rect.x, k.rect.y, k.rect.w, k.rect.h)
@@ -172,7 +172,13 @@ watch([() => props.whiteSelected, () => props.blackSelected], () => {
     <div class="q-pt-md" style="width: 100%">
       <canvas
         ref="canvas"
-        style="width: 100%; height: 120px; border-radius: 4px; background: #f6f6f6; display: block"
+        style="
+          width: 100%;
+          height: 120px;
+          border-radius: 4px;
+          background: var(--app-surface-soft);
+          display: block;
+        "
       />
     </div>
   </div>

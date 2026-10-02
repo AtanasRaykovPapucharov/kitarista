@@ -9,7 +9,7 @@ const routes = [
       {
         path: 'flamenco',
         name: 'flamenco',
-        component: () => import('@/pages/FlamencoPage.vue'),
+        component: () => import('@/pages/GuitarFlamencoPage.vue'),
       },
       { path: 'about', name: 'about', component: () => import('@/pages/AboutPage.vue') },
     ],

@@ -53,7 +53,7 @@ defineExpose({
     transition-duration="500"
     @hide="$emit('hide')"
   >
-    <q-card class="app-dialog bg-grey-10 text-secondary" :style="{ width, minWidth: '320px' }">
+    <q-card class="app-dialog" :style="{ width, minWidth: '320px' }">
       <q-bar class="app-dialog__header">
         <span v-if="title" class="app-dialog__title q-ml-sm">{{ title }}</span>
         <q-btn
@@ -82,7 +82,7 @@ defineExpose({
 .app-dialog__header {
   position: relative;
   height: 72px;
-  background-color: #0e0e0e;
+  background: linear-gradient(105deg, var(--app-header-start), var(--app-header-end));
 }
 
 .app-dialog__logo {
@@ -93,7 +93,7 @@ defineExpose({
 
 .app-dialog__title {
   padding: 0 32px 0 12px;
-  color: var(--q-secondary);
+  color: #ffffff;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-align: right;
@@ -109,5 +109,10 @@ defineExpose({
 .app-dialog__content {
   max-height: 70vh;
   overflow: auto;
+}
+
+.app-dialog {
+  background: var(--app-surface);
+  color: var(--app-text);
 }
 </style>

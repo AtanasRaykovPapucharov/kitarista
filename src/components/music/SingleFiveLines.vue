@@ -620,6 +620,6 @@ function base() {
 canvas {
   cursor: pointer;
   /* cursor: crosshair; */
-  background-color: rgba(245, 245, 220, 0.788);
+  background-color: var(--app-score-surface);
 }
 </style>
