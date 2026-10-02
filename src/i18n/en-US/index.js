@@ -1,0 +1,31 @@
+export default {
+  appName: 'Kitarista',
+  nav: {
+    home: 'Home',
+    scales: 'Scales',
+    chords: 'Chords',
+    flamenco: 'Flamenco',
+    about: 'About',
+    language: 'Language',
+    darkMode: 'Enable dark mode',
+    lightMode: 'Enable light mode',
+  },
+  home: {
+    title: 'Welcome to Kitarista',
+    subtitle: 'Your guitar companion. Start building from here.',
+    counter: 'Strums: {count}',
+    strum: 'Strum',
+    reset: 'Reset',
+  },
+  about: {
+    title: 'About',
+    body: 'Kitarista is built with Quasar, Vue 3, Pinia, vue-i18n and axios, and deploys to Vercel.',
+    back: 'Back to home',
+  },
+  notFound: {
+    title: 'This page does not exist',
+    back: 'Go to home',
+  },
+  failed: 'Action failed',
+  success: 'Action was successful',
+}
