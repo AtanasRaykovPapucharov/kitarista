@@ -1,6 +1,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { useI18n } from 'vue-i18n'
+import logo from '@/assets/logo.png'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
@@ -55,7 +56,12 @@ defineExpose({
   >
     <q-card class="app-dialog" :style="{ width, minWidth: '320px' }">
       <q-bar class="app-dialog__header">
-        <span v-if="title" class="app-dialog__title q-ml-sm">{{ title }}</span>
+        <q-toolbar-title class="app-title">
+          <img :src="logo" alt="" role="button" tabindex="0" class="app-dialog__logo" />
+          <span class="text-h5 q-ml-sm" style="position: relative; top: -6px">{{
+            t('appName')
+          }}</span>
+        </q-toolbar-title>
         <q-btn
           v-if="showClose"
           class="app-dialog__close"
@@ -69,6 +75,7 @@ defineExpose({
         </q-btn>
       </q-bar>
       <q-card-section class="app-dialog__content">
+        <div v-if="title" class="app-dialog__title q-ml-sm">{{ title }}</div>
         <slot />
       </q-card-section>
       <q-card-actions v-if="$slots.actions" align="right">
@@ -81,14 +88,18 @@ defineExpose({
 <style scoped>
 .app-dialog__header {
   position: relative;
-  height: 72px;
+  height: 50px;
   background: linear-gradient(105deg, var(--app-header-start), var(--app-header-end));
 }
 
 .app-dialog__logo {
-  width: 120px;
-  height: 64px;
-  object-fit: contain;
+  width: 30px;
+  height: 30px;
+  margin-top: 10px;
+  border-radius: 6px;
+  object-fit: cover;
+  flex: 0 0 auto;
+  cursor: pointer;
 }
 
 .app-dialog__title {
@@ -96,7 +107,7 @@ defineExpose({
   color: #ffffff;
   font-weight: 600;
   letter-spacing: 0.04em;
-  text-align: right;
+  text-align: center;
 }
 
 .app-dialog__close {
