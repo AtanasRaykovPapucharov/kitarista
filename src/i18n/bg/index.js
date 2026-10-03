@@ -2,6 +2,7 @@ export default {
   appName: 'kitarista',
   nav: {
     home: 'Начало',
+    tones: 'Тонове',
     notes: 'Ноти',
     guitar: 'Китара',
     intervals: 'Интервали',

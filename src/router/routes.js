@@ -23,6 +23,7 @@ const routes = [
       },
       { path: 'about', name: 'about', component: () => import('@/pages/AboutPage.vue') },
       { path: 'notes', name: 'notes', component: () => import('@/pages/NotesSheetPage.vue') },
+      { path: 'tones', name: 'tones', component: () => import('@/pages/GuitarTonesPage.vue') },
     ],
   },
 

@@ -3,6 +3,7 @@ export default {
   nav: {
     home: '首页',
     notes: '乐谱',
+    tones: '音色',
     guitar: '吉他',
     intervals: '音程',
     scales: '音阶',

@@ -789,15 +789,15 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="intervals-heading row items-center q-mb-md q-col-gutter-sm">
+  <!-- <div class="intervals-heading row items-center q-mb-md q-col-gutter-sm">
     <div class="col text-h5">{{ t('title') }}</div>
 
     <q-space />
 
     <div class="col-auto">
-      <svan class="text-secondary">v1.01</svan>
+      <svan class="text-secondary"></svan>
     </div>
-  </div>
+  </div> -->
 
   <q-table
     row-key="id"

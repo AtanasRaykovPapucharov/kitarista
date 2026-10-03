@@ -20,7 +20,8 @@ const currentLocaleLabel = computed(
 
 const navItems = [
   // { to: '/', label: 'nav.home', icon: 'home' },
-  { to: '/', label: 'nav.guitar', icon: 'fa fa-guitar' },
+  { to: '/', label: 'nav.home', icon: 'fa fa-guitar' },
+  { to: '/tones', label: 'nav.tones', icon: 'music_note' },
   { to: '/intervals', label: 'nav.intervals', icon: 'timeline' },
   { to: '/scales', label: 'nav.scales', icon: 'music_note' },
   { to: '/chords', label: 'nav.chords', icon: 'image_aspect_ratio' },
