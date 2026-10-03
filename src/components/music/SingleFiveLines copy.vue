@@ -577,14 +577,12 @@ onMounted(() => {
   base()
 })
 
-// redraw after Vue has applied the new width/height: resizing a canvas
-// erases it, so drawing before the DOM update leaves a blank staff
 watch(
   () => props,
   () => {
     base()
   },
-  { deep: true, flush: 'post' },
+  { deep: true },
 )
 
 // helpers

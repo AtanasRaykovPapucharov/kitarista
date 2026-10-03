@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { COMPAS_MAP } from '../constants'
-import { SECTION_NAMES, TECHNIQUE_MAP, TOQUES, fitStaffNote, staffText } from './music'
+import { SECTION_NAMES, TECHNIQUE_MAP, TOQUES } from './music'
 import { useCompasAudio } from './useCompasAudio'
 import BeatEditor from './BeatEditor.vue'
 
@@ -62,8 +62,7 @@ const clone = (v) => JSON.parse(JSON.stringify(v))
 
 const newCell = () => ({
   chord: '',
-  notes: '', // tab or note names as text
-  staff: [], // staff notes, same model as NoteSheet: { note: ['E'], octave, type }
+  notes: '',
   stroke: 'down',
   techniques: [],
   text: '',
@@ -78,18 +77,7 @@ const newBar = (beats) => ({
 })
 
 const isEmptyCell = (c) =>
-  !c.chord &&
-  !c.notes &&
-  !(c.staff || []).length &&
-  !c.text &&
-  !c.silent &&
-  !(c.techniques || []).length
-
-function normalizeCell(raw) {
-  const cell = { ...newCell(), ...(raw || {}) }
-  cell.staff = Array.isArray(cell.staff) ? cell.staff.map(fitStaffNote) : []
-  return cell
-}
+  !c.chord && !c.notes && !c.text && !c.silent && !(c.techniques || []).length
 
 function defaultSheet() {
   const pattern = clone(COMPAS_MAP.bulerias_1.beats)
@@ -130,7 +118,7 @@ function normalizeSheet(raw) {
           id: bar.id || uid(),
           name: bar.name || '',
           repeat: Number(bar.repeat) || 1,
-          cells: pattern.map((_, i) => normalizeCell(bar.cells?.[i])),
+          cells: pattern.map((_, i) => ({ ...newCell(), ...(bar.cells?.[i] || {}) })),
         }))
       : [newBar(pattern.length)]
 
@@ -320,10 +308,6 @@ const carried = computed(() => {
   )
 })
 
-function staffLine(cell) {
-  return cell.staff?.length ? `♪ ${staffText(cell.staff)}` : ''
-}
-
 function techniqueText(cell) {
   return (cell.techniques || []).map((t) => TECHNIQUE_MAP[t]?.short || t).join(' ')
 }
@@ -385,26 +369,6 @@ function moveSelection(step) {
 
 function patchCell(patch) {
   if (selectedCell.value) Object.assign(selectedCell.value, patch)
-}
-
-// last staff note before the selected beat, so new notes continue the melody
-const previousStaffNote = computed(() => {
-  if (!selected.value) return null
-  for (let b = selected.value.bar; b >= 0; b--) {
-    const cells = sheet.bars[b]?.cells || []
-    const start = b === selected.value.bar ? selected.value.beat - 1 : cells.length - 1
-    for (let i = start; i >= 0; i--) {
-      const staff = cells[i]?.staff
-      if (staff?.length) return staff[staff.length - 1]
-    }
-  }
-  return null
-})
-
-// play a single staff note while writing it
-function auditionNote(note) {
-  if (note && sheet.settings.guitar && !isPlaying.value)
-    audio.preview({ ...newCell(), staff: [note] })
 }
 
 function pickChord(chord) {
@@ -573,7 +537,6 @@ function sheetAsText() {
       const parts = [
         cell.chord && `${cell.chord}${cell.stroke === 'up' ? ' ↑' : ''}`,
         (cell.techniques || []).map((t) => TECHNIQUE_MAP[t]?.label || t).join(', '),
-        cell.staff?.length && staffLine(cell),
         cell.notes,
         cell.text && `"${cell.text}"`,
         cell.silent && '(no click)',
@@ -623,18 +586,16 @@ const SHORTCUTS = [
   ['Space', 'Play or stop'],
   ['← →', 'Previous or next beat'],
   ['↑ ↓', 'Same beat in the previous or next compás'],
-  ['A to G', 'Type a chord, or add a note when the Notes tab is open'],
+  ['A to G', 'Start typing a chord on the selected beat'],
   ['Enter', 'Edit the chord, Enter again moves on'],
-  ['Delete', 'Delete the selected note, or clear the beat'],
+  ['Delete', 'Clear the beat'],
   ['Ctrl C / Ctrl V', 'Copy or paste a beat'],
   ['Ctrl Z / Ctrl Shift Z', 'Undo or redo'],
   ['Esc', 'Close the beat editor'],
 ]
 
 function isTyping(e) {
-  return !!e.target?.closest?.(
-    'input, textarea, select, [contenteditable="true"], [role="slider"], [role="combobox"], .q-field',
-  )
+  return !!e.target?.closest?.('input, textarea, select, [contenteditable="true"], [role="slider"]')
 }
 
 function onKeydown(e) {
@@ -681,7 +642,6 @@ function onKeydown(e) {
     case 'Delete':
     case 'Backspace':
       e.preventDefault()
-      if (editor.value?.deleteSelectedNote()) return
       return clearCell()
     case 'Enter':
       e.preventDefault()
@@ -693,7 +653,7 @@ function onKeydown(e) {
 
   if (!mod && /^[a-gA-G]$/.test(e.key)) {
     e.preventDefault()
-    editor.value?.typeLetter(e.key.toUpperCase())
+    editor.value?.focusChord(e.key.toUpperCase())
   }
 }
 
@@ -1122,7 +1082,7 @@ onBeforeUnmount(() => {
                 silent: cell.silent,
               },
             ]"
-            :aria-label="`Compás ${b + 1}, beat ${sheet.pattern[i]?.label}${cell.chord ? `, ${cell.chord}` : ''}${cell.staff?.length ? `, notes ${staffText(cell.staff)}` : ''}`"
+            :aria-label="`Compás ${b + 1}, beat ${sheet.pattern[i]?.label}${cell.chord ? `, ${cell.chord}` : ''}`"
             @click="selectCell(b, i)"
           >
             <span class="fc-cell-top">
@@ -1130,13 +1090,9 @@ onBeforeUnmount(() => {
               <span v-if="cell.chord && cell.stroke === 'up'" class="fc-stroke">↑</span>
             </span>
             <span v-if="cell.chord" class="fc-chord">{{ cell.chord }}</span>
-            <span
-              v-else-if="i === 0 && carried[b]?.[0] && !cell.notes && !cell.staff?.length"
-              class="fc-chord carried"
-            >
+            <span v-else-if="i === 0 && carried[b]?.[0] && !cell.notes" class="fc-chord carried">
               {{ carried[b][i] }}
             </span>
-            <span v-if="cell.staff?.length" class="fc-notes fc-staff">{{ staffLine(cell) }}</span>
             <span v-if="cell.notes" class="fc-notes">{{ cell.notes }}</span>
             <span v-if="cell.techniques?.length" class="fc-tech">{{ techniqueText(cell) }}</span>
             <span v-if="cell.text" class="fc-text">{{ cell.text }}</span>
@@ -1168,9 +1124,7 @@ onBeforeUnmount(() => {
         :chord-set="chordSet"
         :capo="sheet.capo"
         :can-paste="!!clipboard"
-        :previous-note="previousStaffNote"
         @patch="patchCell"
-        @audition="auditionNote"
         @pick="pickChord"
         @preview="previewSelected"
         @copy="copyCell"
@@ -1448,10 +1402,6 @@ onBeforeUnmount(() => {
   color: #90caf9;
 }
 
-.fc-staff {
-  font-weight: 600;
-}
-
 .fc-tech {
   color: var(--app-muted);
   font-weight: 600;
@@ -1479,11 +1429,6 @@ onBeforeUnmount(() => {
   background: var(--app-surface);
   border-top: 1px solid var(--fc-line);
   border-radius: 0 0 6px 6px;
-  /* the staff makes the editor taller; keep the grid visible above it */
-  max-height: 70vh;
-  max-height: 70dvh;
-  overflow-y: auto;
-  overscroll-behavior: contain;
 }
 
 .fc-kbd {

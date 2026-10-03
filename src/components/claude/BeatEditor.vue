@@ -1,7 +1,19 @@
 <script setup>
-import { computed, nextTick, ref } from 'vue'
-import { TECHNIQUES, parseChord, parseNotes } from './music'
+import { computed, nextTick, ref, watch } from 'vue'
+import {
+  NOTE_TYPES,
+  STAFF_LETTERS,
+  STAFF_OCTAVES,
+  TECHNIQUES,
+  fitStaffNote,
+  parseChord,
+  parseNotes,
+  staffBeats,
+  staffLettersFor,
+  staffMidi,
+} from './music'
 import ChordDiagram from './ChordDiagram.vue'
+import SingleFiveLines from 'src/components/music/SingleFiveLines.vue'
 
 const props = defineProps({
   cell: { type: Object, required: true },
@@ -9,9 +21,21 @@ const props = defineProps({
   chordSet: { type: Array, default: () => [] },
   capo: { type: Number, default: 0 },
   canPaste: { type: Boolean, default: false },
+  // last staff note before this beat, so a melody carries on across beats
+  previousNote: { type: Object, default: null },
 })
 
-const emit = defineEmits(['patch', 'pick', 'preview', 'copy', 'paste', 'clear', 'close', 'move'])
+const emit = defineEmits([
+  'patch',
+  'pick',
+  'preview',
+  'audition',
+  'copy',
+  'paste',
+  'clear',
+  'close',
+  'move',
+])
 
 const chordInput = ref(null)
 
@@ -48,7 +72,168 @@ function onChordKeydown(e) {
   }
 }
 
+/* =====================================================
+   CHORD / NOTES MODE
+===================================================== */
+
+const mode = ref('chord') // 'chord' | 'notes'
+
+const staff = computed(() => props.cell.staff || [])
+const selectedIndex = ref(null)
+
+// opening a beat shows what is written on it; an empty beat keeps the current mode,
+// so writing a melody beat after beat stays on Notes
+watch(
+  () => props.cell,
+  (cell) => {
+    selectedIndex.value = null
+    const hasStaff = !!cell.staff?.length
+    if (hasStaff && !cell.chord) mode.value = 'notes'
+    else if (cell.chord && !hasStaff) mode.value = 'chord'
+  },
+  { immediate: true },
+)
+
+watch(
+  () => staff.value.length,
+  (len) => {
+    if (selectedIndex.value !== null && selectedIndex.value >= len)
+      selectedIndex.value = len ? len - 1 : null
+  },
+)
+
+/* =====================================================
+   STAFF NOTES (same model as NoteSheet)
+===================================================== */
+
+const selectedNote = computed(() =>
+  selectedIndex.value === null ? null : (staff.value[selectedIndex.value] ?? null),
+)
+
+const staffSelection = computed(() =>
+  selectedNote.value ? { chordIndex: selectedIndex.value, letterIndex: 0 } : null,
+)
+
+// the staff canvas is never scaled with CSS (its hit-testing uses raw pixels),
+// so it is drawn at the measured width of its box
+const staffWidth = ref(320)
+function onStaffResize({ width }) {
+  staffWidth.value = Math.max(240, Math.floor(width) - 2)
+}
+
+function setStaff(next) {
+  emit('patch', { staff: next })
+}
+
+function onStaffSelect(sel) {
+  selectedIndex.value = sel ? sel.chordIndex : null
+}
+
+// octave that puts the letter closest to the note before it
+function nearestOctave(letter, from) {
+  const fromMidi = from ? staffMidi(from.note[from.note.length - 1], from.octave) : null
+  const options = STAFF_OCTAVES.filter((o) => o.letters.includes(letter))
+  if (fromMidi === null) return options.find((o) => o.value === 1)?.value ?? options[0].value
+  let best = options[0]
+  for (const o of options) {
+    if (
+      Math.abs(staffMidi(letter, o.value) - fromMidi) <
+      Math.abs(staffMidi(letter, best.value) - fromMidi)
+    )
+      best = o
+  }
+  return best.value
+}
+
+function addNote(letter) {
+  const list = staff.value
+  const at = selectedIndex.value ?? list.length - 1
+  const from = list[at] ?? props.previousNote
+  const pitch = letter || from?.note?.[from.note.length - 1] || 'E'
+  const note = fitStaffNote({
+    note: [pitch],
+    octave: letter || !from ? nearestOctave(pitch, from) : from.octave,
+    type: from?.type ?? 4,
+  })
+  const next = [...list]
+  next.splice(at + 1, 0, note)
+  setStaff(next)
+  selectedIndex.value = at + 1
+  emit('audition', note)
+}
+
+function updateSelected(patch) {
+  const i = selectedIndex.value
+  if (i === null || !staff.value[i]) return
+  const note = fitStaffNote({ ...staff.value[i], ...patch })
+  const next = [...staff.value]
+  next[i] = note
+  setStaff(next)
+  if ('note' in patch || 'octave' in patch) emit('audition', note)
+}
+
+function deleteSelectedNote() {
+  const i = selectedIndex.value
+  if (mode.value !== 'notes' || i === null || !staff.value[i]) return false
+  const next = staff.value.filter((_, k) => k !== i)
+  setStaff(next)
+  selectedIndex.value = next.length ? Math.max(0, i - 1) : null
+  return true
+}
+
+const pitch = computed({
+  get: () => selectedNote.value?.note ?? [],
+  set: (value) => updateSelected({ note: value }),
+})
+const octave = computed({
+  get: () => selectedNote.value?.octave ?? 1,
+  set: (value) => updateSelected({ octave: value }),
+})
+const duration = computed({
+  get: () => selectedNote.value?.type ?? 4,
+  set: (value) => updateSelected({ type: value }),
+})
+
+const pitchOptions = computed(() => {
+  const allowed = staffLettersFor(octave.value)
+  return STAFF_LETTERS.map((l) => ({ label: l, value: l, disable: !allowed.includes(l) }))
+})
+
+// an octave is offered only when every stacked letter fits on it
+const octaveOptions = computed(() =>
+  STAFF_OCTAVES.map((o) => ({
+    label: o.label,
+    value: o.value,
+    disable: !pitch.value.every((l) => o.letters.includes(l)),
+  })),
+)
+
+function formatBeats(x) {
+  const whole = Math.floor(x + 1e-9)
+  let num = Math.round((x - whole) * 16)
+  let den = 16
+  while (num && num % 2 === 0) {
+    num /= 2
+    den /= 2
+  }
+  const frac = num ? `${num}/${den}` : ''
+  const value = [whole || '', frac].filter(Boolean).join(' ') || '0'
+  return `${value} ${x > 1 ? 'beats' : 'beat'}`
+}
+
+const totalBeats = computed(() => staffBeats(staff.value))
+const beatsLabel = computed(() => {
+  if (!staff.value.length) return ''
+  const label = `Lasts ${formatBeats(totalBeats.value)}`
+  return totalBeats.value > 1 + 1e-9 ? `${label}, runs into the next beats` : label
+})
+
+/* =====================================================
+   EXPOSED TO THE COMPÁS EDITOR (keyboard)
+===================================================== */
+
 async function focusChord(initial) {
+  mode.value = 'chord'
   if (typeof initial === 'string') emit('patch', { chord: initial })
   await nextTick()
   const input = chordInput.value?.$el?.querySelector('input')
@@ -58,12 +243,18 @@ async function focusChord(initial) {
   input.setSelectionRange(end, end)
 }
 
-defineExpose({ focusChord })
+// A to G: start a chord, or add a note when the Notes tab is open
+function typeLetter(letter) {
+  if (mode.value === 'notes') addNote(letter)
+  else focusChord(letter)
+}
+
+defineExpose({ focusChord, typeLetter, deleteSelectedNote })
 </script>
 
 <template>
   <div class="beat-editor">
-    <div class="row items-center no-wrap q-mb-sm">
+    <div class="row items-center no-wrap q-mb-xs">
       <div class="text-subtitle2 text-grey-3 ellipsis">{{ title }}</div>
       <q-space />
       <q-btn flat dense round size="sm" icon="play_arrow" color="blue-5" @click="emit('preview')">
@@ -92,7 +283,27 @@ defineExpose({ focusChord })
       </q-btn>
     </div>
 
-    <div class="row no-wrap q-gutter-x-md items-start">
+    <q-tabs
+      v-model="mode"
+      dense
+      no-caps
+      inline-label
+      narrow-indicator
+      align="left"
+      active-color="blue-5"
+      indicator-color="blue-5"
+      class="text-grey-5 q-mb-sm mode-tabs"
+    >
+      <q-tab name="chord" label="Chord" :alert="mode !== 'chord' && !!chord ? 'blue-5' : false" />
+      <q-tab
+        name="notes"
+        label="Notes"
+        :alert="mode !== 'notes' && (staff.length > 0 || !!notes) ? 'blue-5' : false"
+      />
+    </q-tabs>
+
+    <!-- ===== Chord ===== -->
+    <div v-if="mode === 'chord'" class="row no-wrap q-gutter-x-md items-start">
       <div class="col">
         <q-input
           ref="chordInput"
@@ -141,6 +352,99 @@ defineExpose({ focusChord })
       </div>
     </div>
 
+    <!-- ===== Notes ===== -->
+    <div v-else class="notes-panel">
+      <div class="staff-box">
+        <q-resize-observer @resize="onStaffResize" />
+        <SingleFiveLines
+          :width="staffWidth"
+          clef="treble"
+          :beat="null"
+          :sharps="0"
+          :flats="0"
+          :notes="staff"
+          :selected="staffSelection"
+          @select="onStaffSelect"
+        />
+      </div>
+
+      <div class="row items-center no-wrap q-gutter-x-sm q-mt-sm">
+        <q-btn outline dense no-caps color="blue-5" icon="add" label="Add note" @click="addNote()" />
+        <q-btn
+          v-if="selectedNote"
+          outline
+          dense
+          no-caps
+          color="negative"
+          icon="delete"
+          label="Delete note"
+          @click="deleteSelectedNote"
+        />
+        <q-space />
+        <span class="text-caption text-grey-6 ellipsis">{{ beatsLabel }}</span>
+      </div>
+
+      <div v-if="selectedNote" class="note-fields q-mt-sm">
+        <q-select
+          v-model="pitch"
+          class="note-pitch"
+          label="Pitch"
+          :options="pitchOptions"
+          emit-value
+          map-options
+          multiple
+          use-chips
+          dense
+          outlined
+          options-dense
+          color="blue-5"
+        />
+        <q-select
+          v-model="octave"
+          label="Octave"
+          :options="octaveOptions"
+          emit-value
+          map-options
+          dense
+          outlined
+          options-dense
+          color="blue-5"
+        />
+        <q-select
+          v-model="duration"
+          label="Duration"
+          :options="NOTE_TYPES"
+          emit-value
+          map-options
+          dense
+          outlined
+          options-dense
+          color="blue-5"
+        />
+      </div>
+      <p v-else class="empty text-caption text-grey-6">
+        {{
+          staff.length
+            ? 'Tap a note on the staff to change its pitch, octave and duration.'
+            : 'Add a note, or press A to G to write one straight onto the staff.'
+        }}
+      </p>
+
+      <q-input
+        v-model="notes"
+        label="Tab"
+        placeholder="3-2 1-0  or  6-0+1-0"
+        dense
+        outlined
+        color="blue-5"
+        class="q-mt-sm"
+        :error="invalidNotes.length > 0"
+        :error-message="`Can't read: ${invalidNotes.join(' ')}`"
+        hint="Optional. Space plays notes in order, + plays them together."
+      />
+    </div>
+
+    <!-- ===== Shared ===== -->
     <div class="chips q-mt-sm">
       <q-chip
         v-for="t in TECHNIQUES"
@@ -156,32 +460,16 @@ defineExpose({ focusChord })
       </q-chip>
     </div>
 
-    <div class="row q-col-gutter-sm q-mt-xs">
-      <div class="col-12 col-sm-6">
-        <q-input
-          v-model="notes"
-          label="Notes or tab"
-          placeholder="E3 G#3  or  3-2 1-0"
-          dense
-          outlined
-          color="blue-5"
-          :error="invalidNotes.length > 0"
-          :error-message="`Can't read: ${invalidNotes.join(' ')}`"
-          hint="Space plays notes in order. Use + to play them together, like 6-0+1-0."
-        />
-      </div>
-      <div class="col-12 col-sm-6">
-        <q-input
-          v-model="text"
-          label="Text"
-          placeholder="Lyrics, falseta cue, reminder"
-          dense
-          outlined
-          color="blue-5"
-          hint="Shown under the beat"
-        />
-      </div>
-    </div>
+    <q-input
+      v-model="text"
+      label="Text"
+      placeholder="Lyrics, falseta cue, reminder"
+      dense
+      outlined
+      color="blue-5"
+      hint="Shown under the beat"
+      class="q-mt-xs"
+    />
 
     <q-toggle
       v-model="silent"
@@ -207,5 +495,47 @@ defineExpose({ focusChord })
 .diagram {
   min-width: 72px;
   min-height: 88px;
+}
+
+.mode-tabs :deep(.q-tab) {
+  padding: 0 12px;
+  min-height: 32px;
+}
+
+.notes-panel {
+  min-width: 0;
+}
+
+/* sized by the resize observer; scrolls rather than scales on very narrow screens */
+.staff-box {
+  position: relative;
+  overflow-x: auto;
+  border-radius: 6px;
+}
+
+.staff-box :deep(canvas) {
+  display: block;
+  border: 1px solid var(--app-border);
+  border-radius: 6px;
+}
+
+.note-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.6fr);
+  gap: 8px;
+}
+
+.empty {
+  margin: 8px 0 0;
+  line-height: 1.45;
+}
+
+@media (max-width: 599px) {
+  .note-fields {
+    grid-template-columns: 1fr 1fr;
+  }
+  .note-pitch {
+    grid-column: 1 / -1;
+  }
 }
 </style>

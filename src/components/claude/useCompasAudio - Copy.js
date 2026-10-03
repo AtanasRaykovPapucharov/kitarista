@@ -1,5 +1,5 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
-import { parseNotes, staffGroups, voiceChord } from './music'
+import { parseNotes, voiceChord } from './music'
 
 /* =====================================================
    Audio engine for the compás editor
@@ -339,27 +339,6 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
           }
           k++
         }
-      })
-    }
-
-    // staff notes play one after another; a quarter note is one beat,
-    // longer values ring on into the following beats
-    const staff = staffGroups(cell.staff)
-    if (staff.length) {
-      let at = time
-      staff.forEach((group, gi) => {
-        const length = group.beats * secondsPerBeat
-        const repeats = tech.has('tremolo') ? Math.max(1, Math.round(group.beats * 4)) : 1
-        for (let r = 0; r < repeats; r++) {
-          const soft = (tech.has('ligado') && gi > 0) || r > 0
-          for (const n of transpose(group.notes, capo)) {
-            pluck(bus, n, at + (r * length) / repeats, {
-              gain: (soft ? 0.15 : 0.25) * velocity,
-              damp,
-            })
-          }
-        }
-        at += length
       })
     }
 
