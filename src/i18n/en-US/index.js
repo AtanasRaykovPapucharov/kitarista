@@ -1,12 +1,17 @@
 export default {
-  appName: 'Kitarista',
+  appName: 'kitarista',
   nav: {
     home: 'Home',
+    guitar: 'Guitar',
+    intervals: 'Intervals',
     scales: 'Scales',
     chords: 'Chords',
     flamenco: 'Flamenco',
     about: 'About',
     language: 'Language',
+    tuner: 'Tuner',
+    openMenu: 'Open navigation menu',
+    closeMenu: 'Close navigation menu',
     darkMode: 'Enable dark mode',
     lightMode: 'Enable light mode',
   },

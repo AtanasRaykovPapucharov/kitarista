@@ -1,12 +1,17 @@
 export default {
-  appName: 'Китариста',
+  appName: 'kitarista',
   nav: {
     home: 'Начало',
+    guitar: 'Китара',
+    intervals: 'Интервали',
     scales: 'Скали',
     chords: 'Акорди',
     flamenco: 'Фламенко',
     about: 'За приложението',
     language: 'Език',
+    tuner: 'Тюнер',
+    openMenu: 'Отвори навигационното меню',
+    closeMenu: 'Затвори навигационното меню',
     darkMode: 'Включи тъмен режим',
     lightMode: 'Включи светъл режим',
   },

@@ -2,7 +2,7 @@
   "name": "kitarista",
   "version": "0.0.1",
   "description": "A Quasar Project",
-  "productName": "Kitarista",
+  "productName": "kitarista",
   "type": "module",
   "private": true,
   "scripts": {

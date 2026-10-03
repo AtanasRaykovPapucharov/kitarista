@@ -20,7 +20,7 @@ export default defineConfig((ctx) => {
     extras: [
       // 'ionicons-v4',
       // 'mdi-v7',
-      // 'fontawesome-v7',
+      'fontawesome-v7',
       // 'eva-icons',
       // 'themify',
       // 'line-awesome',
@@ -112,7 +112,27 @@ export default defineConfig((ctx) => {
       // directives: [],
 
       // Quasar plugins
-      plugins: ['Notify', 'Dialog'],
+      plugins: [
+        'AddressbarColor',
+        'AppFullscreen',
+        'AppNetwork',
+        'AppVisibility',
+        'AppWakeLock',
+        'BottomSheet',
+        'Cookies',
+        'Dark',
+        'Dialog',
+        'IconSet',
+        'Lang',
+        'Loading',
+        'LoadingBar',
+        'LocalStorage',
+        'Meta',
+        'Notify',
+        'Platform',
+        'Screen',
+        'SessionStorage',
+      ],
     },
 
     // animations: 'all', // --- includes all animations
