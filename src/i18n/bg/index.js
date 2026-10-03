@@ -2,6 +2,7 @@ export default {
   appName: 'kitarista',
   nav: {
     home: 'Начало',
+    notes: 'Ноти',
     guitar: 'Китара',
     intervals: 'Интервали',
     scales: 'Скали',
@@ -33,4 +34,9 @@ export default {
   },
   failed: 'Действието е неуспешно',
   success: 'Действието е успешно',
+  common: {
+    cancel: 'Отказ',
+    confirm: 'Потвърди',
+    close: 'Затвори',
+  },
 }

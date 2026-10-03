@@ -693,7 +693,7 @@ onBeforeUnmount(() => {
         <q-tooltip>Redo</q-tooltip>
       </q-btn>
 
-      <q-btn flat dense round icon="tune" color="grey-5">
+      <q-btn flat dense round icon="settings" color="grey-5">
         <q-tooltip>Sound and practice</q-tooltip>
         <q-menu anchor="bottom right" self="top right">
           <div class="fc-menu q-pa-md">

@@ -21,7 +21,7 @@ const onChordSelect = (notes) => {
 </script>
 <template>
   <div>
-    <div v-if="$q.screen.lt.md" class="q-pa-none">
+    <div v-if="$q.screen.lt.md" class="q-pt-xl">
       <guitar-chords @select="onChordSelect" />
     </div>
     <q-splitter

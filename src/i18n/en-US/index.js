@@ -2,6 +2,7 @@ export default {
   appName: 'kitarista',
   nav: {
     home: 'Home',
+    notes: 'Notes',
     guitar: 'Guitar',
     intervals: 'Intervals',
     scales: 'Scales',
@@ -33,4 +34,9 @@ export default {
   },
   failed: 'Action failed',
   success: 'Action was successful',
+  common: {
+    cancel: 'Cancel',
+    confirm: 'Confirm',
+    close: 'Close',
+  },
 }

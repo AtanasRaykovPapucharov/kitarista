@@ -22,6 +22,7 @@ const routes = [
         component: () => import('@/pages/GuitarTunerPage.vue'),
       },
       { path: 'about', name: 'about', component: () => import('@/pages/AboutPage.vue') },
+      { path: 'notes', name: 'notes', component: () => import('@/pages/NotesSheetPage.vue') },
     ],
   },
 

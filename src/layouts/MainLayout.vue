@@ -23,8 +23,10 @@ const navItems = [
   { to: '/', label: 'nav.guitar', icon: 'fa fa-guitar' },
   { to: '/intervals', label: 'nav.intervals', icon: 'timeline' },
   { to: '/scales', label: 'nav.scales', icon: 'music_note' },
-  { to: '/chords', label: 'nav.chords', icon: 'library_music' },
+  { to: '/chords', label: 'nav.chords', icon: 'image_aspect_ratio' },
+  { to: '/notes', label: 'nav.notes', icon: 'library_music' },
   { to: '/tuner', label: 'nav.tuner', icon: 'tune' },
+
   // { to: '/flamenco', label: 'nav.flamenco', icon: 'fa fa-guitar' },
   // { to: '/about', label: 'nav.about', icon: 'info' },
 ]

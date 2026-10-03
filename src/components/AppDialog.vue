@@ -65,7 +65,7 @@ defineExpose({
           color="red-5"
           v-close-popup
         >
-          <q-tooltip>{{ t('common.actions.close') }}</q-tooltip>
+          <q-tooltip>{{ t('common.close') }}</q-tooltip>
         </q-btn>
       </q-bar>
       <q-card-section class="app-dialog__content">

@@ -318,6 +318,7 @@ watch(
         size="xs"
       />
     </div>
+    <q-separator class="q-my-md" />
     <!-- <pre>CH: {{ chords }}</pre> -->
     <div v-if="!chordVariations.length">
       <header style="margin-left: 90px">
@@ -365,8 +366,8 @@ watch(
 }
 
 .guitar-chords__letter {
-  width: 30px;
-  flex: 0 0 30px;
+  width: 48px;
+  flex: 0 0 48px;
 }
 
 .guitar-chords__variations {

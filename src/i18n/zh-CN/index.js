@@ -2,6 +2,7 @@ export default {
   appName: 'kitarista',
   nav: {
     home: '首页',
+    notes: '乐谱',
     guitar: '吉他',
     intervals: '音程',
     scales: '音阶',
@@ -33,4 +34,9 @@ export default {
   },
   failed: '操作失败',
   success: '操作成功',
+  common: {
+    cancel: '取消',
+    confirm: '确认',
+    close: '关闭',
+  },
 }
