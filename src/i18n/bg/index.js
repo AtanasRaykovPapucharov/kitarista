@@ -1,6 +1,7 @@
 export default {
   appName: 'kitarista',
   nav: {
+    menu: 'Меню',
     home: 'Начало',
     tones: 'Тонове',
     notes: 'Ноти',

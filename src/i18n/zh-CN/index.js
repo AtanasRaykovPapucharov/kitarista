@@ -1,6 +1,7 @@
 export default {
   appName: 'kitarista',
   nav: {
+    menu: '菜单',
     home: '首页',
     notes: '乐谱',
     tones: '音色',

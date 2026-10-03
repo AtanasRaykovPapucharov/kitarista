@@ -1,10 +1,12 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useI18n } from 'vue-i18n'
+import { useQuasar } from 'quasar'
 import { useSettingsStore } from '@/stores/settings-store'
 import logo from '@/assets/logo.png'
 
 const { t } = useI18n()
+const $q = useQuasar()
 const settings = useSettingsStore()
 const drawerWidth = 300
 
@@ -33,6 +35,9 @@ const navItems = [
 ]
 
 const leftDrawerOpen = ref(false)
+
+// same breakpoint as NoteSheet's settings drawer
+const isMobile = computed(() => $q.screen.lt.sm)
 
 function openLeftDrawer() {
   leftDrawerOpen.value = true
@@ -96,8 +101,23 @@ function closeLeftDrawer() {
     </q-header>
 
     <q-drawer v-model="leftDrawerOpen" show-if-above bordered :width="drawerWidth">
-      <div class="drawer-content">
-        <q-list padding>
+      <div class="drawer-content" :class="{ 'is-mobile': isMobile }">
+        <!-- phones: title row with a close button, like NoteSheet's settings drawer -->
+        <header v-if="isMobile" class="drawer-head">
+          <h2 class="drawer-title">{{ t('nav.menu', 'Menu') }}</h2>
+          <q-btn
+            flat
+            round
+            dense
+            class="drawer-quiet"
+            icon="close"
+            :aria-label="t('nav.closeMenu')"
+            :title="t('nav.closeMenu')"
+            @click="closeLeftDrawer"
+          />
+        </header>
+
+        <q-list padding class="drawer-list">
           <q-item v-for="item in navItems" :key="item.to" clickable :to="item.to" exact>
             <q-item-section avatar>
               <q-icon :name="item.icon" />
@@ -109,7 +129,7 @@ function closeLeftDrawer() {
     </q-drawer>
 
     <q-btn
-      v-if="leftDrawerOpen"
+      v-if="leftDrawerOpen && !isMobile"
       class="page-drawer-close-button"
       flat
       dense
@@ -154,9 +174,44 @@ function closeLeftDrawer() {
   min-height: 100%;
 }
 
+/* phones: header stays put, only the list scrolls */
+.drawer-content.is-mobile {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.drawer-content.is-mobile .drawer-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.drawer-head {
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: calc(10px + env(safe-area-inset-top, 0px)) 8px 10px 16px;
+  border-bottom: 1px solid var(--app-border);
+}
+
+.drawer-title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+  line-height: 1.3;
+  color: var(--app-text);
+}
+
+.drawer-quiet {
+  color: var(--app-muted);
+}
+
 .page-drawer-close-button {
   position: fixed;
-  top: 80px;
+  top: 65px;
   z-index: 3000;
   transform: translateX(-50%);
   border: 1px solid var(--app-border);
