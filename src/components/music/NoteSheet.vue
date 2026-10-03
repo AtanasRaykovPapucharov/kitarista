@@ -258,6 +258,13 @@ const onSelectNote = (sel) => {
     noteDraft.note = [...chord.note]
     noteDraft.type = chord.type
     noteDraft.octave = chord.octave
+
+    // phones: the note fields live in the drawer, so open it on the Notes box
+    // (tapping empty staff only deselects and leaves the drawer closed)
+    if (isMobile.value) {
+      if (settingsPanel.value) settingsPanel.value.scrollTop = 0
+      openSettings()
+    }
   }
 }
 
