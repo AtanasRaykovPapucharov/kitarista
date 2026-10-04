@@ -5,17 +5,8 @@
    - notes / tab parsing ("E3 G#3", "3-2 1-0", "6-0+4-2")
 ===================================================== */
 
-import {
-  TUNING,
-  fitItem,
-  itemBeats,
-  itemsText,
-  placeOnStrings,
-  resolveStaff,
-  soundingMidi,
-} from 'src/components/music/notation'
-
-export { TUNING }
+// string 1 (high E) ... string 6 (low E), MIDI numbers
+export const TUNING = [64, 59, 55, 50, 45, 40]
 
 const LETTER_PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }
 const ACCIDENTAL = { '#': 1, '♯': 1, b: -1, '♭': -1, '': 0 }
@@ -305,57 +296,110 @@ export const SECTION_NAMES = [
 ]
 
 /* =====================================================
-   Staff notes: the NoteSheet model, shared through notation.js
-   { note: ['E', 'G#'], octave: 'm' | 1 | 2 | 3, type, dot?, tie? }
-   { rest: true, note: [], octave, type, dot? }
-   One beat of the compás is a quarter note. Each beat's staff is its own
-   short list: an accidental lasts to the end of that beat.
+   Staff notes, same model as NoteSheet / SingleFiveLines
+   { note: ['E'], octave: 'm' | 1 | 2 | 3, type: 1 | 2 | 4 | 8 | 16 | 32 | 64 }
+   A rest is { rest: true, note: [], octave, type }: it takes its time, silently.
+   Guitar notation on the treble clef: it sounds an octave
+   lower than written, so 'm' E is the open 6th string and
+   octave 3 E is the 1st string at the 12th fret.
+   One beat of the compás is a quarter note.
 ===================================================== */
 
-export {
-  LETTERS as STAFF_LETTERS,
-  OCTAVES as STAFF_OCTAVES,
-  NOTE_TYPES,
-  ACCIDENTALS,
-  lettersFor as staffLettersFor,
-  fitItem as fitStaffNote,
-  lastPitched,
-  placeOnStrings,
-  nearestOctave,
-  stepItem,
-} from 'src/components/music/notation'
+export const STAFF_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
 
-/** Context for one beat's staff: no key signature, accidentals last the beat. */
-export const BEAT_CONTEXT = Object.freeze({ freeScope: 'list' })
+export const STAFF_OCTAVES = [
+  { value: 'm', label: 'Low', written: 3, letters: ['E', 'F', 'G', 'A', 'B'] },
+  { value: 1, label: '1', written: 4, letters: STAFF_LETTERS },
+  { value: 2, label: '2', written: 5, letters: STAFF_LETTERS },
+  { value: 3, label: 'High', written: 6, letters: ['C', 'D', 'E'] },
+]
+const STAFF_OCTAVE_MAP = new Map(STAFF_OCTAVES.map((o) => [o.value, o]))
 
-/** Sounding MIDI number of a written staff note (natural unless altered). */
-export const staffMidi = (letter, octave, alter = 0) => soundingMidi(letter, octave, alter)
+export const NOTE_TYPES = [
+  { value: 1, label: 'Whole (4 beats)' },
+  { value: 2, label: 'Half (2 beats)' },
+  { value: 4, label: 'Quarter (1 beat)' },
+  { value: 8, label: 'Eighth (½ beat)' },
+  { value: 16, label: 'Sixteenth (¼ beat)' },
+  { value: 32, label: 'Thirty-second (⅛ beat)' },
+  { value: 64, label: 'Sixty-fourth (1/16 beat)' },
+]
+const NOTE_TYPE_VALUES = NOTE_TYPES.map((t) => t.value)
 
-/**
- * Timed groups for playback.
- * @param tiedIn the previous beat ended on a note tied into this one
- * @returns {{ notes, beats, rest, tiedIn }[]}
- */
-export function staffGroups(staff, { tiedIn = false } = {}) {
+export function staffLettersFor(octave) {
+  return STAFF_OCTAVE_MAP.get(octave)?.letters ?? STAFF_LETTERS
+}
+
+/** Clean a staff note (or rest) so SingleFiveLines can always draw it. */
+export function fitStaffNote(raw) {
+  const o = raw?.octave
+  const octave = o === 'm' ? 'm' : STAFF_OCTAVE_MAP.has(Number(o)) ? Number(o) : 1
+  if (raw?.rest) {
+    const type = NOTE_TYPE_VALUES.includes(Number(raw.type)) ? Number(raw.type) : 4
+    return { rest: true, note: [], octave, type }
+  }
+  const allowed = staffLettersFor(octave)
+  const letters = (Array.isArray(raw?.note) ? raw.note : [raw?.note])
+    .map((l) => String(l || '').toUpperCase())
+    .filter((l) => allowed.includes(l))
+  const note = [...new Set(letters)].sort(
+    (a, b) => STAFF_LETTERS.indexOf(a) - STAFF_LETTERS.indexOf(b),
+  )
+  const type = NOTE_TYPE_VALUES.includes(Number(raw?.type)) ? Number(raw.type) : 4
+  return { note: note.length ? note : [allowed[0]], octave, type }
+}
+
+/** Sounding MIDI number of a written staff note. */
+export function staffMidi(letter, octave) {
+  const o = STAFF_OCTAVE_MAP.get(octave)
+  if (!o || !(letter in LETTER_PC)) return null
+  return o.written * 12 + LETTER_PC[letter]
+}
+
+/** Give each note of a stacked chord its own string, lowest fret first. */
+export function placeOnStrings(midis) {
+  const used = new Set()
+  return [...midis]
+    .sort((a, b) => b - a)
+    .map((midi) => {
+      let string = null
+      for (let s = 1; s <= 6; s++) {
+        const fret = midi - TUNING[s - 1]
+        if (!used.has(s) && fret >= 0 && fret <= 19) {
+          string = s
+          break
+        }
+      }
+      if (string === null) string = stringForMidi(midi)
+      used.add(string)
+      return { string, midi }
+    })
+}
+
+/** @returns {{ notes: {string:number, midi:number}[], beats: number }[]} */
+export function staffGroups(staff) {
   if (!Array.isArray(staff)) return []
-  const items = staff.map(fitItem)
-  const resolved = resolveStaff(items, BEAT_CONTEXT)
-  let held = tiedIn
-  return items.map((n, i) => {
-    const group = {
-      notes: n.rest ? [] : placeOnStrings(resolved[i].pitches.map((p) => p.midi)),
-      beats: itemBeats(n),
-      rest: !!n.rest,
-      tiedIn: held && !n.rest,
-    }
-    held = !!n.tie && !n.rest
-    return group
-  })
+  return staff.map(fitStaffNote).map((n) => ({
+    notes: n.rest
+      ? []
+      : placeOnStrings(n.note.map((l) => staffMidi(l, n.octave)).filter((m) => m !== null)),
+    beats: 4 / n.type,
+  }))
 }
 
 export function staffBeats(staff) {
-  return (staff || []).reduce((sum, n) => sum + itemBeats(n), 0)
+  return (staff || []).reduce((sum, n) => sum + 4 / (Number(n?.type) || 4), 0)
 }
 
-/** "E G♯. –" (a dash is a rest, a dot a dotted note, ~ a tie) */
-export const staffText = (staff) => itemsText(staff)
+/** Last note with a pitch at or before index, skipping rests. */
+export function lastPitched(staff, index) {
+  for (let i = Math.min(index, (staff?.length ?? 0) - 1); i >= 0; i--) {
+    if (!staff[i]?.rest && staff[i]?.note?.length) return staff[i]
+  }
+  return null
+}
+
+/** "E – G+B" (a dash is a rest), for the grid and the text export */
+export function staffText(staff) {
+  return (staff || []).map((n) => (n.rest ? '–' : (n.note || []).join('+'))).join(' ')
+}

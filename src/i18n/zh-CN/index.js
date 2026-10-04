@@ -2,6 +2,7 @@ export default {
   appName: 'kitarista',
   nav: {
     menu: '菜单',
+    compas: '节拍表',
     home: '首页',
     notes: '乐谱',
     tones: '音色',

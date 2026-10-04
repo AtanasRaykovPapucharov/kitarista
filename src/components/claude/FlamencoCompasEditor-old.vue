@@ -2,24 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { COMPAS_MAP } from '../constants'
-import {
-  BEAT_CONTEXT,
-  SECTION_NAMES,
-  TECHNIQUE_MAP,
-  TOQUES,
-  fitStaffNote,
-  lastPitched,
-  staffText,
-} from './music'
-import {
-  absoluteAlters,
-  beatsToMelody,
-  copiedNotes,
-  copyNotes,
-  melodyToBeats,
-  respell,
-  toAbsolute,
-} from 'src/components/music/notation'
+import { SECTION_NAMES, TECHNIQUE_MAP, TOQUES, fitStaffNote, lastPitched, staffText } from './music'
 import { useCompasAudio } from './useCompasAudio'
 import BeatEditor from './BeatEditor.vue'
 
@@ -304,54 +287,6 @@ function removeBar(i) {
   if (selected.value?.bar === i) selected.value = null
   else if (selected.value?.bar > i)
     selected.value = { ...selected.value, bar: selected.value.bar - 1 }
-}
-
-/* ---------- melodies: copy a compás's staff notes, paste notes across beats ---------- */
-
-function copyBarNotes(i) {
-  const lists = sheet.bars[i].cells.map((c) =>
-    toAbsolute((c.staff || []).map(fitStaffNote), BEAT_CONTEXT),
-  )
-  const melody = beatsToMelody(lists)
-  if (!melody.length) {
-    $q.notify({ message: 'This compás has no staff notes to copy.', position: 'top-left' })
-    return
-  }
-  copyNotes(melody)
-  $q.notify({
-    type: 'positive',
-    message: `Copied ${melody.length} notes and rests. Paste them into a note sheet or another compás.`,
-    position: 'top-left',
-  })
-}
-
-// one quarter note per beat, starting at the given beat; adds compases when
-// the melody runs past the last one. Replaces the staff notes of those beats.
-function pasteMelody(bar, beat = 0) {
-  const items = copiedNotes.value
-  if (!items?.length) return
-  const beats = melodyToBeats(items)
-  const n = sheet.pattern.length
-  let b = bar
-  let i = beat
-  for (const list of beats) {
-    while (b >= sheet.bars.length) sheet.bars.push(newBar(n))
-    sheet.bars[b].cells[i].staff = respell(
-      list.map(fitStaffNote),
-      BEAT_CONTEXT,
-      list.map(absoluteAlters),
-    )
-    i++
-    if (i >= n) {
-      i = 0
-      b++
-    }
-  }
-  $q.notify({
-    type: 'positive',
-    message: `Pasted over ${beats.length} beat${beats.length === 1 ? '' : 's'}.`,
-    position: 'top-left',
-  })
 }
 
 function toggleLoop(i) {
@@ -688,14 +623,10 @@ function clearAll() {
 const showShortcuts = ref(false)
 const SHORTCUTS = [
   ['Space', 'Play or stop'],
-  ['← →', 'Previous or next beat, or note in the Notes tab'],
+  ['← →', 'Previous or next beat'],
   ['↑ ↓', 'Same beat in the previous or next compás'],
   ['A to G', 'Type a chord, or add a note when the Notes tab is open'],
   ['R', 'Add a rest when the Notes tab is open'],
-  ['↑ ↓ on a note', 'Move it a step, with Shift an octave'],
-  ['1 to 7 on a note', 'Length, from whole to sixty-fourth'],
-  ['. and T on a note', 'Dotted, tie to the next note'],
-  ['# - = on a note', 'Sharp, flat, natural'],
   ['Enter', 'Edit the chord, Enter again moves on'],
   ['Delete', 'Delete the selected note or rest, or clear the beat'],
   ['Ctrl C / Ctrl V', 'Copy or paste a beat'],
@@ -735,12 +666,6 @@ function onKeydown(e) {
     return togglePlay()
   }
   if (!selected.value) return
-
-  // the Notes tab handles keys for its selected note first
-  if (!mod && editor.value?.handleKey(e)) {
-    e.preventDefault()
-    return
-  }
 
   const n = sheet.pattern.length
   switch (e.key) {
@@ -1169,17 +1094,6 @@ onBeforeUnmount(() => {
                 <q-item v-close-popup clickable @click="duplicateBar(b)">
                   <q-item-section>Duplicate</q-item-section>
                 </q-item>
-                <q-item v-close-popup clickable @click="copyBarNotes(b)">
-                  <q-item-section>Copy notes as a melody</q-item-section>
-                </q-item>
-                <q-item
-                  v-close-popup
-                  clickable
-                  :disable="!copiedNotes"
-                  @click="pasteMelody(b, 0)"
-                >
-                  <q-item-section>Paste melody here</q-item-section>
-                </q-item>
                 <q-item v-close-popup clickable :disable="b === 0" @click="moveBar(b, -1)">
                   <q-item-section>Move up</q-item-section>
                 </q-item>
@@ -1265,7 +1179,6 @@ onBeforeUnmount(() => {
         :previous-note="previousStaffNote"
         @patch="patchCell"
         @audition="auditionNote"
-        @paste-melody="pasteMelody(selected.bar, selected.beat)"
         @pick="pickChord"
         @preview="previewSelected"
         @copy="copyCell"

@@ -1,47 +1,11 @@
 <script setup>
 import { TouchSwipe, useQuasar } from 'quasar'
-import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import GuitarGriff from 'src/components/GuitarGriff.vue'
-import SingleFiveLines from './SingleFiveLines.vue'
-import {
-  ACCIDENTALS,
-  LETTERS,
-  NOTE_TYPES,
-  OCTAVES,
-  absoluteAlters,
-  accOf,
-  buildTimeline,
-  copiedNotes,
-  copyNotes,
-  fitItem,
-  itemWhole,
-  letterOf,
-  lettersFor,
-  measureLength,
-  nearestOctave,
-  placeOnStrings,
-  resolveStaff,
-  respell,
-  stepItem,
-  toAbsolute,
-  withAcc,
-} from './notation'
-import { useStaffPlayer } from './useStaffPlayer'
-
-/* =====================================================
-   PROPS
-   v-model     the whole sheet (optional), so a parent can save it
-   storageKey  autosave to localStorage, null to disable
-===================================================== */
-
-const props = defineProps({
-  modelValue: { type: Object, default: null },
-  storageKey: { type: String, default: 'note-sheet' },
-})
-const emit = defineEmits(['update:modelValue'])
+import SingleFiveLines from 'src/components/music/SingleFiveLines.vue'
 
 const $q = useQuasar()
-const showNeck = ref(false) // fretboard can be folded away to give the staff more room
+const showNeck = ref(true) // fretboard can be folded away to give the staff more room
 
 /* =====================================================
    SETTINGS DRAWER (phones only)
@@ -85,21 +49,29 @@ watch(isMobile, (mobile) => {
   if (!mobile) settingsOpen.value = false
 })
 
+onBeforeUnmount(() => {
+  document.body.style.overflow = ''
+  window.removeEventListener('keydown', onDrawerKeydown)
+})
+
 /* =====================================================
    SHEET MODEL
-   A sheet is a list of staves (five-line systems), like the compás
-   editor's list of compases. Notes and rests: see notation.js.
-   Clef, key and time signature are set for the whole sheet; a staff can
-   override any of them in `own` (a missing key means "same as sheet"):
-     own: { clef?: 'treble' | 'bass' | null,
-            key?: { sharps, flats },
-            beat?: '3/4' | null }      (null = hidden on this staff)
 ===================================================== */
 
 const clone = (v) => JSON.parse(JSON.stringify(v))
 
 let idCounter = 0
 const uid = () => `${Date.now().toString(36)}${(idCounter++).toString(36)}`
+
+/* A sheet is a list of staves (five-line systems), like the compás
+   editor's list of compases. Each staff holds notes and rests:
+     note: { note: ['C', 'E'], octave: 'm' | 1 | 2 | 3, type: 1..64 }
+     rest: { rest: true, note: [], octave, type }
+   Clef, key and time signature are set for the whole sheet. A staff can
+   override any of them in `own`; a missing key means "same as sheet":
+     own: { clef?: 'treble' | 'bass' | null,
+            key?: { sharps, flats },
+            beat?: '3/4' | null }      (null = hidden on this staff)      */
 
 const newStaff = (notes = [], own = {}) => ({ id: uid(), own, notes })
 
@@ -122,15 +94,24 @@ function defaultSheet() {
     width: 730,
     clef: 'treble',
     beat: '4/4',
-    sharps: 0,
+    sharps: 3,
     flats: 0,
-    tempo: 90,
-    showTab: false,
     staves: [newStaff([{ note: ['C'], type: 1, octave: 1 }])],
   }
 }
 
-const normalizeNotes = (list) => (Array.isArray(list) ? list.map(fitItem) : [])
+function normalizeNote(n) {
+  const type = Number(n?.type) || 4
+  const octave = n?.octave ?? 1
+  if (n?.rest) return { rest: true, note: [], type, octave }
+  return {
+    note: Array.isArray(n?.note) ? [...n.note] : [n?.note || 'C'],
+    type,
+    octave,
+  }
+}
+
+const normalizeNotes = (list) => (Array.isArray(list) ? list.map(normalizeNote) : [])
 
 // clef and beat can be null on purpose (hidden on the staff), so a missing
 // key falls back to the default but an explicit null is kept.
@@ -155,31 +136,17 @@ function normalizeSheet(raw) {
     beat: 'beat' in raw ? raw.beat : base.beat,
     sharps,
     flats: sharps > 0 ? 0 : Number(raw.flats) || 0,
-    tempo: Math.min(240, Math.max(30, Number(raw.tempo) || base.tempo)),
-    showTab: !!raw.showTab,
     staves,
   }
 }
 
-function loadLocal() {
-  if (!props.storageKey) return null
-  try {
-    const raw = localStorage.getItem(props.storageKey)
-    return raw ? JSON.parse(raw) : null
-  } catch {
-    return null
-  }
-}
-
-const initial = props.modelValue ?? loadLocal()
-const sheetName = ref(initial?.name || 'Untitled sheet')
-const addOperState = reactive(normalizeSheet(initial))
+const sheetName = ref('Untitled sheet')
+const addOperState = reactive(defaultSheet())
 
 const selectedNote = ref(null) // { staff, chordIndex, letterIndex }
 const activeStaff = ref(0) // staff that new notes and rests go to
 
 function replaceSheet(next) {
-  player.stop()
   Object.assign(addOperState, normalizeSheet(next))
   selectedNote.value = null
   activeStaff.value = 0
@@ -191,8 +158,8 @@ function replaceSheet(next) {
    Set for the whole sheet, or for one staff on its own.
 ===================================================== */
 
-// what a staff actually uses: its own settings, else the sheet's
-function staffSettings(staff) {
+// what a staff actually shows: its own settings, else the sheet's
+function resolveStaff(staff) {
   const own = staff?.own || {}
   const key = 'key' in own ? own.key : { sharps: addOperState.sharps, flats: addOperState.flats }
   return {
@@ -203,50 +170,18 @@ function staffSettings(staff) {
   }
 }
 
-const staffConfigs = computed(() => addOperState.staves.map(staffSettings))
+const resolved = computed(() => addOperState.staves.map(resolveStaff))
 
 // a time signature is drawn at the start, and again wherever the meter changes
 // or a staff was given its own
 const showTime = computed(() =>
-  staffConfigs.value.map(
+  resolved.value.map(
     (r, i) =>
       !!r.beat &&
       (i === 0 ||
-        r.beat !== staffConfigs.value[i - 1].beat ||
+        r.beat !== resolved.value[i - 1].beat ||
         'beat' in (addOperState.staves[i].own || {})),
   ),
-)
-
-// barlines carry on from one staff to the next: each staff starts with the
-// part of a measure the staves before it left open. A change of meter
-// starts a fresh measure.
-const measureStarts = computed(() => {
-  let fill = 0
-  return addOperState.staves.map((staff, i) => {
-    const beat = staffConfigs.value[i].beat
-    if (i > 0 && beat !== staffConfigs.value[i - 1].beat) fill = 0
-    const len = measureLength(beat)
-    const start = fill
-    if (len) {
-      for (const n of staff.notes) {
-        fill += itemWhole(n)
-        if (fill >= len - 1e-9) fill = 0
-      }
-    }
-    return start
-  })
-})
-
-// everything needed to read a staff's pitches
-const staffContext = (i) => ({
-  ...staffConfigs.value[i],
-  measureStart: measureStarts.value[i] ?? 0,
-  freeScope: 'note',
-})
-
-// pitch of every note, with key signature and accidentals applied
-const pitchInfo = computed(() =>
-  addOperState.staves.map((staff, i) => resolveStaff(staff.notes, staffContext(i))),
 )
 
 const settingsScope = ref('sheet') // 'sheet' | 'staff' (the active staff)
@@ -267,7 +202,7 @@ const shown = computed(() =>
         flats: addOperState.flats,
         beat: addOperState.beat,
       }
-    : staffSettings(scopeStaff.value),
+    : resolveStaff(scopeStaff.value),
 )
 
 // true when the staff in scope uses the sheet's setting for this group
@@ -301,7 +236,7 @@ function setFollows(group, follow) {
     delete staff.own[group]
     return
   }
-  const r = staffSettings(staff)
+  const r = resolveStaff(staff)
   staff.own[group] = group === 'key' ? { sharps: r.sharps, flats: r.flats } : r[group]
 }
 
@@ -309,7 +244,7 @@ function setFollows(group, follow) {
 const lastVisible = reactive({})
 const visibleKey = (group) =>
   `${settingsScope.value === 'sheet' ? 'sheet' : scopeStaff.value?.id}:${group}`
-const SHOW_DEFAULTS = { clef: 'treble', key: { sharps: 1, flats: 0 }, beat: '4/4' }
+const SHOW_DEFAULTS = { clef: 'treble', key: { sharps: 3, flats: 0 }, beat: '4/4' }
 
 const isShown = (group) =>
   group === 'key' ? !!(shown.value.sharps || shown.value.flats) : !!shown.value[group]
@@ -318,9 +253,7 @@ function toggleVisible(group) {
   const id = visibleKey(group)
   if (isShown(group)) {
     lastVisible[id] =
-      group === 'key'
-        ? { sharps: shown.value.sharps, flats: shown.value.flats }
-        : shown.value[group]
+      group === 'key' ? { sharps: shown.value.sharps, flats: shown.value.flats } : shown.value[group]
     setGroup(group, group === 'key' ? { sharps: 0, flats: 0 } : null)
   } else {
     setGroup(group, lastVisible[id] ?? SHOW_DEFAULTS[group])
@@ -370,8 +303,7 @@ const scopeHint = computed(() =>
 function ownSummary(staff) {
   const own = staff.own || {}
   const parts = []
-  if ('clef' in own)
-    parts.push(own.clef ? `${own.clef === 'bass' ? 'Bass' : 'Treble'} clef` : 'No clef')
+  if ('clef' in own) parts.push(own.clef ? `${own.clef === 'bass' ? 'Bass' : 'Treble'} clef` : 'No clef')
   if ('key' in own) {
     const { sharps: s, flats: f } = own.key
     parts.push(
@@ -393,7 +325,7 @@ async function openStaffSettings(i) {
 }
 
 /* =====================================================
-   IMPORT / EXPORT / PRINT
+   IMPORT / EXPORT
 ===================================================== */
 
 const fileInput = ref(null)
@@ -403,19 +335,16 @@ function fileName(ext) {
   return `${base.replace(/\s+/g, '-').toLowerCase() || 'note-sheet'}.${ext}`
 }
 
-function sheetPayload() {
+function exportJson() {
   const sheet = clone(addOperState)
-  return {
-    version: 3,
+  const payload = {
+    version: 2,
     name: sheetName.value || 'Untitled sheet',
     ...sheet,
     // flat copy for anything that still reads version 1 files
     notes: sheet.staves.flatMap((st) => st.notes),
   }
-}
-
-function exportJson() {
-  const blob = new Blob([JSON.stringify(sheetPayload(), null, 2)], { type: 'application/json' })
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
   a.href = url
@@ -451,53 +380,13 @@ function importJson(e) {
 function clearAll() {
   $q.dialog({
     title: 'Clear the sheet?',
-    message:
-      'All staves, notes and rests will be removed and the settings reset. You can undo this.',
+    message: 'All staves, notes and rests will be removed and the settings reset.',
     cancel: { flat: true, label: 'Cancel' },
     ok: { color: 'negative', label: 'Clear' },
   }).onOk(() => {
     replaceSheet({ ...defaultSheet(), staves: [newStaff()] })
     sheetName.value = 'Untitled sheet'
   })
-}
-
-const stavesBox = ref(null)
-
-// opens a clean page with the staves as images and the browser's print dialog,
-// where "Save as PDF" is also offered
-async function printSheet() {
-  const keep = selectedNote.value
-  selectedNote.value = null
-  player.stop()
-  await nextTick()
-  const canvases = [...(stavesBox.value?.querySelectorAll('canvas') ?? [])]
-  const images = canvases.map((c) => c.toDataURL('image/png'))
-  selectedNote.value = keep
-
-  const win = window.open('', '_blank')
-  if (!win) {
-    $q.notify({
-      type: 'negative',
-      message: 'The print window was blocked. Allow pop-ups for this site and try again.',
-      position: 'top-left',
-    })
-    return
-  }
-  const title = (sheetName.value || 'Untitled sheet').replace(/[<>&]/g, '')
-  win.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${title}</title>
-<style>
-  body { margin: 24px; font-family: Georgia, 'Times New Roman', serif; color: #000; background: #fff; }
-  h1 { font-size: 20px; font-weight: normal; margin: 0 0 16px; }
-  img { display: block; max-width: 100%; margin: 0 0 6px; break-inside: avoid; }
-  @page { margin: 14mm; }
-</style></head><body><h1>${title}</h1>
-${images.map((src) => `<img src="${src}" alt="">`).join('\n')}
-</body></html>`)
-  win.document.close()
-  win.onload = () => {
-    win.focus()
-    win.print()
-  }
 }
 
 /* =====================================================
@@ -516,12 +405,11 @@ async function addStaff() {
   activeStaff.value = addOperState.staves.length - 1
   selectedNote.value = null
   await nextTick()
-  scrollToStaff(activeStaff.value)
-}
-
-function scrollToStaff(i) {
   const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
-  staffEls[i]?.scrollIntoView({ block: 'nearest', behavior: reduce ? 'auto' : 'smooth' })
+  staffEls[activeStaff.value]?.scrollIntoView({
+    block: 'nearest',
+    behavior: reduce ? 'auto' : 'smooth',
+  })
 }
 
 function duplicateStaff(i) {
@@ -559,32 +447,57 @@ function removeStaff(i) {
     activeStaff.value = Math.max(0, activeStaff.value - 1)
 }
 
+// barlines carry on from one staff to the next: each staff starts with the
+// part of a measure the staves before it left open. A change of meter
+// starts a fresh measure.
+function measureLength(beat) {
+  if (!beat) return null
+  const [top, bottom] = String(beat).split('/').map(Number)
+  return top && bottom ? top / bottom : null
+}
+
+const measureStarts = computed(() => {
+  let fill = 0
+  return addOperState.staves.map((staff, i) => {
+    const beat = resolved.value[i].beat
+    if (i > 0 && beat !== resolved.value[i - 1].beat) fill = 0
+    const len = measureLength(beat)
+    const start = fill
+    if (len) {
+      for (const n of staff.notes) {
+        fill += 1 / (Number(n.type) || 4)
+        if (fill >= len - 1e-9) fill = 0
+      }
+    }
+    return start
+  })
+})
+
 /* =====================================================
-   NOTES & RESTS
-   Every change goes through editStaff: an accidental lasts to the end of
-   its measure, so adding, removing or changing one note could change how
-   later notes sound. Notes that were not edited keep their pitch.
+   NOTES & RESTS: selection and properties
 ===================================================== */
 
-const typeOptions = NOTE_TYPES.map((t) => ({ value: t.value, label: t.label.split(' (')[0] }))
+const NOTE_LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+// letters SingleFiveLines can place on each octave
+const OCTAVES = [
+  { label: 'Low (m)', value: 'm', letters: ['E', 'F', 'G', 'A', 'B'] },
+  { label: '1', value: 1, letters: NOTE_LETTERS },
+  { label: '2', value: 2, letters: NOTE_LETTERS },
+  { label: 'High (3)', value: 3, letters: ['C', 'D', 'E'] },
+]
+const typeOptions = [
+  { label: 'Whole', value: 1 },
+  { label: 'Half', value: 2 },
+  { label: 'Quarter', value: 4 },
+  { label: 'Eighth', value: 8 },
+  { label: 'Sixteenth', value: 16 },
+  { label: 'Thirty-second', value: 32 },
+  { label: 'Sixty-fourth', value: 64 },
+]
 const kindOptions = [
   { label: 'Note', value: 'note' },
   { label: 'Rest', value: 'rest' },
 ]
-
-function editStaff(si, change) {
-  const staff = addOperState.staves[si]
-  if (!staff) return
-  const context = staffContext(si)
-  const before = resolveStaff(staff.notes, context)
-  const alters = new Map(
-    staff.notes.map((n, i) => [toRaw(n), before[i].pitches.map((p) => p.alter)]),
-  )
-  const next = staff.notes.map((n) => toRaw(n))
-  change(next)
-  const desired = next.map((n) => alters.get(toRaw(n)) ?? null)
-  staff.notes = respell(next, context, desired)
-}
 
 const selectedItem = computed(() => {
   const sel = selectedNote.value
@@ -599,40 +512,20 @@ function pitchedBefore(staffIndex, index) {
   for (let s = staffIndex; s >= 0; s--) {
     const notes = addOperState.staves[s]?.notes || []
     const start = s === staffIndex ? index - 1 : notes.length - 1
-    const found = lastPitchedIn(notes, start)
-    if (found) return found
+    for (let i = start; i >= 0; i--) {
+      if (!notes[i]?.rest && notes[i]?.note?.length) return notes[i]
+    }
   }
   return null
 }
 
-function lastPitchedIn(notes, start) {
-  for (let i = start; i >= 0; i--) {
-    if (!notes[i]?.rest && notes[i]?.note?.length) return notes[i]
-  }
-  return null
-}
-
-const selectedPitches = computed(() => {
-  const sel = selectedNote.value
-  if (!sel || !selectedItem.value || selectedItem.value.rest) return []
-  return pitchInfo.value[sel.staff]?.[sel.chordIndex]?.pitches ?? []
-})
-
-// GuitarGriff takes names like "C1", "F#1", "Bbm" (letter, accidental, octave)
 const selectedGuitarNotes = computed(() => {
   const item = selectedItem.value
   if (!item || item.rest) return []
-  return selectedPitches.value.map(
-    (p) => `${p.letter}${p.alter > 0 ? '#' : p.alter < 0 ? 'b' : ''}${item.octave ?? 1}`,
-  )
+  return item.note.map((note) => `${note}${item.octave ?? 1}`)
 })
 
 const selectedGuitarLabel = computed(() => '')
-
-function audition(si, index) {
-  const pitches = pitchInfo.value[si]?.[index]?.pitches
-  if (pitches?.length) player.preview(placeOnStrings(pitches.map((p) => p.midi)))
-}
 
 const onSelectNote = (staffIndex, sel) => {
   activeStaff.value = staffIndex
@@ -646,55 +539,46 @@ const onSelectNote = (staffIndex, sel) => {
   }
 }
 
-// adds after the selected note or rest, or at the end of the active staff.
-// With a letter, the note goes to the octave closest to the note before it.
-function addItem(rest = false, letter = null) {
+// adds after the selected note or rest, or at the end of the active staff
+function addItem(rest = false) {
   const sel = selectedNote.value
-  const si = sel ? sel.staff : Math.min(activeStaff.value, addOperState.staves.length - 1)
-  const staff = addOperState.staves[si]
-  if (!staff) return
+  const staffIndex = sel ? sel.staff : Math.min(activeStaff.value, addOperState.staves.length - 1)
+  const staff = addOperState.staves[staffIndex]
   const at = sel ? sel.chordIndex + 1 : staff.notes.length
-  const from = pitchedBefore(si, at)
+  const from = pitchedBefore(staffIndex, at)
   const type = staff.notes[at - 1]?.type ?? from?.type ?? 4
   const octave = from?.octave ?? 1
 
-  let item
-  if (rest) item = fitItem({ rest: true, type, octave })
-  else if (letter) item = fitItem({ note: [letter], octave: nearestOctave(letter, from), type })
-  else item = fitItem({ note: from ? from.note.map(letterOf) : ['C'], octave, type })
-
-  editStaff(si, (notes) => notes.splice(at, 0, item))
-  activeStaff.value = si
-  selectedNote.value = { staff: si, chordIndex: at, letterIndex: 0 }
-  if (!rest) nextTick(() => audition(si, at))
+  staff.notes.splice(
+    at,
+    0,
+    rest
+      ? { rest: true, note: [], type, octave }
+      : { note: from ? [...from.note] : ['C'], type, octave },
+  )
+  activeStaff.value = staffIndex
+  selectedNote.value = { staff: staffIndex, chordIndex: at, letterIndex: 0 }
 }
 
 const addNote = () => addItem(false)
 const addRest = () => addItem(true)
 
-function deleteNote() {
+const deleteNote = () => {
   const sel = selectedNote.value
-  if (!sel || !selectedItem.value) return
-  editStaff(sel.staff, (notes) => notes.splice(sel.chordIndex, 1))
-  const left = addOperState.staves[sel.staff].notes.length
+  if (!sel) return
+  const notes = addOperState.staves[sel.staff]?.notes
+  if (!notes) return
+  notes.splice(sel.chordIndex, 1)
   // keep a selection so Delete can be pressed again, like a backspace
-  selectedNote.value = left
-    ? { ...sel, chordIndex: Math.max(0, sel.chordIndex - 1), letterIndex: 0 }
+  selectedNote.value = notes.length
+    ? { ...sel, chordIndex: Math.max(0, sel.chordIndex - 1) }
     : null
 }
 
-function replaceSelected(item, sound = false) {
+function replaceSelected(item) {
   const sel = selectedNote.value
-  if (!sel || !selectedItem.value) return
-  editStaff(sel.staff, (notes) => notes.splice(sel.chordIndex, 1, item))
-  if (sound && !item.rest) nextTick(() => audition(sel.staff, sel.chordIndex))
-}
-
-function updateSelected(patch) {
-  const item = selectedItem.value
-  if (!item) return
-  const sound = 'note' in patch || 'octave' in patch || 'rest' in patch
-  replaceSelected(fitItem({ ...toRaw(item), ...patch }), sound)
+  const notes = addOperState.staves[sel?.staff]?.notes
+  if (notes?.[sel.chordIndex]) notes.splice(sel.chordIndex, 1, item)
 }
 
 // switch the selected item between a note and a rest of the same length
@@ -703,68 +587,45 @@ const kind = computed({
   set: (value) => {
     const item = selectedItem.value
     if (!item || (value === 'rest') === !!item.rest) return
-    if (value === 'rest') return updateSelected({ rest: true, tie: false })
-    const from = pitchedBefore(selectedNote.value.staff, selectedNote.value.chordIndex)
-    updateSelected({
-      rest: false,
-      note: from ? from.note.map(letterOf) : ['C'],
-      octave: from?.octave ?? 1,
-    })
+    if (value === 'rest') {
+      replaceSelected({ rest: true, note: [], type: item.type, octave: item.octave })
+    } else {
+      const from = pitchedBefore(selectedNote.value.staff, selectedNote.value.chordIndex)
+      replaceSelected({
+        note: from ? [...from.note] : ['C'],
+        type: item.type,
+        octave: from?.octave ?? 1,
+      })
+    }
   },
 })
 
-// letters only; each letter keeps its accidental while it stays in the chord
 const pitch = computed({
-  get: () => (selectedItem.value?.rest ? [] : (selectedItem.value?.note ?? []).map(letterOf)),
-  set: (letters) => {
-    const current = selectedItem.value?.note ?? []
-    if (!letters?.length) return
-    updateSelected({ note: letters.map((l) => current.find((s) => letterOf(s) === l) ?? l) })
+  get: () => (selectedItem.value?.rest ? [] : (selectedItem.value?.note ?? [])),
+  set: (value) => {
+    const item = selectedItem.value
+    if (item && !item.rest && value?.length) item.note = [...value]
   },
 })
 
 const octave = computed({
   get: () => selectedItem.value?.octave ?? 1,
-  set: (value) => updateSelected({ octave: value }),
+  set: (value) => {
+    if (selectedItem.value) selectedItem.value.octave = value
+  },
 })
 
 const duration = computed({
   get: () => selectedItem.value?.type ?? 4,
-  set: (value) => updateSelected({ type: value }),
+  set: (value) => {
+    if (selectedItem.value) selectedItem.value.type = value
+  },
 })
-
-const dotted = computed({
-  get: () => !!selectedItem.value?.dot,
-  set: (value) => updateSelected({ dot: value }),
-})
-
-const tied = computed({
-  get: () => !!selectedItem.value?.tie,
-  set: (value) => updateSelected({ tie: value }),
-})
-
-// one accidental switch per letter of the selected note or chord
-const letterRows = computed(() => {
-  const item = selectedItem.value
-  if (!item || item.rest) return []
-  return item.note.map((s, j) => ({ j, letter: letterOf(s), acc: accOf(s) }))
-})
-
-function setAccidental(j, acc) {
-  const item = selectedItem.value
-  if (!item || item.rest || !item.note[j]) return
-  updateSelected({ note: item.note.map((s, k) => (k === j ? withAcc(letterOf(s), acc) : s)) })
-}
-
-function stepSelected(delta) {
-  const moved = stepItem(toRaw(selectedItem.value), delta)
-  if (moved) replaceSelected(moved, true)
-}
 
 // only letters the chosen octave can show, and only octaves that fit every letter
 const pitchOptions = computed(() => {
-  const allowed = lettersFor(octave.value)
-  return LETTERS.map((l) => ({ label: l, value: l, disable: !allowed.includes(l) }))
+  const allowed = OCTAVES.find((o) => o.value === octave.value)?.letters ?? NOTE_LETTERS
+  return NOTE_LETTERS.map((l) => ({ label: l, value: l, disable: !allowed.includes(l) }))
 })
 
 const octaveOptions = computed(() =>
@@ -777,325 +638,8 @@ const octaveOptions = computed(() =>
 
 const addTarget = computed(() => {
   const sel = selectedNote.value
-  if (sel)
-    return `New notes and rests go after the selected one on ${staffNumber(sel.staff).toLowerCase()}.`
+  if (sel) return `New notes and rests go after the selected one on ${staffNumber(sel.staff).toLowerCase()}.`
   return `New notes and rests go at the end of ${staffNumber(activeStaff.value).toLowerCase()}.`
-})
-
-/* ---------- copy & paste (also between the note sheet and the compás editor) ---------- */
-
-function copyStaffNotes(i) {
-  const staff = addOperState.staves[i]
-  if (!staff?.notes.length) return
-  copyNotes(
-    toAbsolute(
-      staff.notes.map((n) => toRaw(n)),
-      staffContext(i),
-    ),
-  )
-  $q.notify({
-    type: 'positive',
-    message: `Copied ${staffNumber(i).toLowerCase()}. Paste it here or into a compás.`,
-    position: 'top-left',
-  })
-}
-
-function copySelected() {
-  const sel = selectedNote.value
-  if (!sel || !selectedItem.value) return copyStaffNotes(activeStaff.value)
-  const notes = addOperState.staves[sel.staff].notes.map((n) => toRaw(n))
-  copyNotes([toAbsolute(notes, staffContext(sel.staff))[sel.chordIndex]])
-  $q.notify({ type: 'positive', message: 'Copied the selected note.', position: 'top-left' })
-}
-
-// copied notes keep their sound: accidentals are added for this staff's key
-function pasteNotes() {
-  const items = copiedNotes.value
-  if (!items?.length) return
-  const sel = selectedNote.value
-  const si = sel ? sel.staff : Math.min(activeStaff.value, addOperState.staves.length - 1)
-  const staff = addOperState.staves[si]
-  if (!staff) return
-  const at = sel ? sel.chordIndex + 1 : staff.notes.length
-  const context = staffContext(si)
-  const before = resolveStaff(staff.notes, context)
-  const pasted = items.map(fitItem)
-  const raw = staff.notes.map((n) => toRaw(n))
-  staff.notes = respell([...raw.slice(0, at), ...pasted, ...raw.slice(at)], context, [
-    ...raw.slice(0, at).map(() => null),
-    ...pasted.map(absoluteAlters),
-    ...before.slice(at).map((r) => r.pitches.map((p) => p.alter)),
-  ])
-  activeStaff.value = si
-  selectedNote.value = { staff: si, chordIndex: at + pasted.length - 1, letterIndex: 0 }
-}
-
-/* =====================================================
-   PLAYBACK
-===================================================== */
-
-const player = useStaffPlayer()
-const isPlaying = player.isPlaying
-const loop = ref(false)
-const metronome = ref(false)
-
-const timeline = () =>
-  buildTimeline(
-    addOperState.staves.map((staff, i) => ({
-      items: staff.notes.map((n) => toRaw(n)),
-      context: staffContext(i),
-    })),
-  )
-
-function startPlayback(from) {
-  player.play(timeline(), {
-    tempo: addOperState.tempo,
-    loop: loop.value,
-    click: metronome.value,
-    from,
-  })
-}
-
-// from the selected note, or from the start
-function togglePlay() {
-  if (isPlaying.value) return player.stop()
-  const sel = selectedNote.value
-  startPlayback(sel ? { staff: sel.staff, index: sel.chordIndex } : null)
-}
-
-const playingIndex = (i) => (player.current.value?.staff === i ? player.current.value.index : null)
-
-// keep the staff being played in view
-watch(
-  () => player.current.value?.staff,
-  (staff) => {
-    if (staff !== undefined && staff !== null) scrollToStaff(staff)
-  },
-)
-
-// tempo, loop or click changed while playing: carry on from the current note
-let restartTimer = null
-watch([() => addOperState.tempo, loop, metronome], () => {
-  if (!isPlaying.value) return
-  clearTimeout(restartTimer)
-  restartTimer = setTimeout(() => {
-    if (isPlaying.value) startPlayback(player.current.value)
-  }, 250)
-})
-
-/* =====================================================
-   UNDO / REDO
-===================================================== */
-
-const history = reactive({ stack: [], index: -1 })
-let applyingHistory = false
-let historyTimer = null
-
-// tempo is a playback setting, not an edit
-const snapshot = () => JSON.stringify({ name: sheetName.value, ...addOperState, tempo: undefined })
-
-function pushHistory() {
-  const snap = snapshot()
-  if (history.stack[history.index] === snap) return
-  history.stack.splice(history.index + 1)
-  history.stack.push(snap)
-  if (history.stack.length > 100) history.stack.shift()
-  history.index = history.stack.length - 1
-}
-
-function restore(index) {
-  clearTimeout(historyTimer)
-  applyingHistory = true
-  const snap = JSON.parse(history.stack[index])
-  const tempo = addOperState.tempo
-  const sel = selectedNote.value
-  const active = activeStaff.value
-  replaceSheet({ ...snap, tempo })
-  sheetName.value = snap.name || 'Untitled sheet'
-  history.index = index
-  // keep the selection when it still points at something
-  activeStaff.value = Math.min(active, addOperState.staves.length - 1)
-  if (sel && addOperState.staves[sel.staff]?.notes[sel.chordIndex]) selectedNote.value = sel
-  nextTick(() => (applyingHistory = false))
-}
-
-const canUndo = computed(() => history.index > 0)
-const canRedo = computed(() => history.index < history.stack.length - 1)
-const undo = () => canUndo.value && restore(history.index - 1)
-const redo = () => canRedo.value && restore(history.index + 1)
-
-/* =====================================================
-   AUTOSAVE & V-MODEL
-===================================================== */
-
-let saveTimer = null
-let lastEmitted = ''
-
-watch(
-  [addOperState, sheetName],
-  () => {
-    clearTimeout(saveTimer)
-    saveTimer = setTimeout(() => {
-      const payload = sheetPayload()
-      const json = JSON.stringify(payload)
-      if (props.storageKey) {
-        try {
-          localStorage.setItem(props.storageKey, json)
-        } catch {
-          /* storage full or blocked: the sheet still lives in memory */
-        }
-      }
-      lastEmitted = json
-      emit('update:modelValue', payload)
-    }, 400)
-
-    if (!applyingHistory) {
-      clearTimeout(historyTimer)
-      historyTimer = setTimeout(pushHistory, 300)
-    }
-  },
-  { deep: true },
-)
-
-watch(
-  () => props.modelValue,
-  (value) => {
-    if (!value || JSON.stringify(value) === lastEmitted) return
-    replaceSheet(value)
-    sheetName.value = value.name || sheetName.value
-  },
-  { deep: true },
-)
-
-/* =====================================================
-   KEYBOARD
-===================================================== */
-
-const showShortcuts = ref(false)
-const SHORTCUTS = [
-  ['Space', 'Play or stop, from the selected note'],
-  ['A to G', 'Add a note after the selected one'],
-  ['R', 'Add a rest'],
-  ['← →', 'Previous or next note'],
-  ['↑ ↓', 'Move the note a step, with Shift an octave'],
-  ['1 to 7', 'Length, from whole to sixty-fourth'],
-  ['.', 'Dotted note or rest'],
-  ['T', 'Tie to the next note'],
-  ['# or +', 'Sharp'],
-  ['-', 'Flat'],
-  ['=', 'Natural'],
-  ['Delete', 'Delete the selected note or rest'],
-  ['Ctrl C / Ctrl V', 'Copy the note (or the staff) / paste after it'],
-  ['Ctrl Z / Ctrl Shift Z', 'Undo or redo'],
-  ['Esc', 'Deselect'],
-]
-
-const DURATION_KEYS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16, 6: 32, 7: 64 }
-const ACCIDENTAL_KEYS = { '#': '#', '+': '#', '-': 'b', '=': 'n' }
-
-function isTyping(e) {
-  return !!e.target?.closest?.(
-    'input, textarea, select, [contenteditable="true"], [role="slider"], [role="combobox"], .q-field',
-  )
-}
-
-// previous or next note or rest, across staves
-function moveSelection(delta) {
-  const sel = selectedNote.value
-  const staves = addOperState.staves
-  if (!sel) {
-    const si = Math.min(activeStaff.value, staves.length - 1)
-    if (staves[si]?.notes.length)
-      selectedNote.value = {
-        staff: si,
-        chordIndex: delta > 0 ? 0 : staves[si].notes.length - 1,
-        letterIndex: 0,
-      }
-    return
-  }
-  let s = sel.staff
-  let i = sel.chordIndex + delta
-  while (s >= 0 && s < staves.length && (i < 0 || i >= staves[s].notes.length)) {
-    s += delta
-    if (s < 0 || s >= staves.length) return
-    i = delta > 0 ? 0 : staves[s].notes.length - 1
-  }
-  if (s < 0 || s >= staves.length) return
-  activeStaff.value = s
-  selectedNote.value = { staff: s, chordIndex: i, letterIndex: 0 }
-}
-
-function onKeydown(e) {
-  if (isTyping(e)) {
-    if (e.key === 'Escape') e.target.blur()
-    return
-  }
-  if (document.querySelector('.q-dialog, .q-menu')) return
-  const mod = e.ctrlKey || e.metaKey
-  const key = e.key
-
-  if (mod) {
-    const k = key.toLowerCase()
-    if (k === 'z') {
-      e.preventDefault()
-      return e.shiftKey ? redo() : undo()
-    }
-    if (k === 'y') {
-      e.preventDefault()
-      return redo()
-    }
-    if (k === 'c' && !window.getSelection()?.toString()) {
-      e.preventDefault()
-      return copySelected()
-    }
-    if (k === 'v' && copiedNotes.value) {
-      e.preventDefault()
-      return pasteNotes()
-    }
-    return
-  }
-  if (e.altKey) return
-
-  const item = selectedItem.value
-  const handled = () => {
-    e.preventDefault()
-    return true
-  }
-
-  if (key === ' ') return handled() && togglePlay()
-  if (key === 'Escape') return (selectedNote.value = null)
-  if (key === 'ArrowLeft' || key === 'ArrowRight')
-    return handled() && moveSelection(key === 'ArrowRight' ? 1 : -1)
-  if (/^[a-gA-G]$/.test(key)) return handled() && addItem(false, key.toUpperCase())
-  if (key === 'r' || key === 'R') return handled() && addItem(true)
-  if (!item) return
-
-  if (key === 'Delete' || key === 'Backspace') return handled() && deleteNote()
-  if (key === 'ArrowUp' || key === 'ArrowDown')
-    return handled() && stepSelected((key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 7 : 1))
-  if (DURATION_KEYS[key]) return handled() && updateSelected({ type: DURATION_KEYS[key] })
-  if (key === '.') return handled() && updateSelected({ dot: !item.dot })
-  if (item.rest) return
-  if (key === 't' || key === 'T') return handled() && updateSelected({ tie: !item.tie })
-  if (ACCIDENTAL_KEYS[key]) {
-    const j = Math.min(selectedNote.value.letterIndex ?? 0, item.note.length - 1)
-    const want = ACCIDENTAL_KEYS[key]
-    return handled() && setAccidental(j, accOf(item.note[j]) === want ? '' : want)
-  }
-}
-
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-  pushHistory()
-})
-
-onBeforeUnmount(() => {
-  document.body.style.overflow = ''
-  window.removeEventListener('keydown', onDrawerKeydown)
-  window.removeEventListener('keydown', onKeydown)
-  clearTimeout(saveTimer)
-  clearTimeout(historyTimer)
-  clearTimeout(restartTimer)
 })
 
 // helpers
@@ -1151,213 +695,84 @@ function allowOnlyDigits(e) {
           <span class="ns-hint">Tap a staff to write on it, or a note to change it</span>
         </header>
 
-        <!-- playback and view -->
-        <div class="ns-transport">
-          <q-btn
-            round
-            unelevated
-            color="primary"
-            :icon="isPlaying ? 'stop' : 'play_arrow'"
-            :aria-label="isPlaying ? 'Stop' : 'Play'"
-            @click="togglePlay"
-          >
-            <q-tooltip
-              >{{ selectedItem ? 'Play from the selected note' : 'Play' }} (Space)</q-tooltip
+        <div
+          v-for="(staff, i) in addOperState.staves"
+          :key="staff.id"
+          :ref="(el) => (staffEls[i] = el)"
+          class="ns-staff"
+          :class="{ 'is-active': activeStaff === i }"
+        >
+          <div class="ns-staff-head">
+            <span class="ns-staff-num">{{ i + 1 }}</span>
+            <q-btn
+              v-if="ownSummary(staff)"
+              flat
+              dense
+              no-caps
+              size="sm"
+              class="ns-own"
+              :label="ownSummary(staff)"
+              :aria-label="`${staffNumber(i)} has its own settings: ${ownSummary(staff)}. Edit`"
+              @click="openStaffSettings(i)"
+            />
+            <span v-if="!staff.notes.length" class="ns-staff-empty">Empty</span>
+            <q-space />
+            <q-btn
+              flat
+              dense
+              round
+              size="sm"
+              icon="more_horiz"
+              class="ns-quiet"
+              :aria-label="`${staffNumber(i)} options`"
             >
-          </q-btn>
-          <div class="ns-tempo">
-            <span class="ns-tempo-value">{{ addOperState.tempo }}</span>
-            <span class="ns-tempo-unit">BPM</span>
+              <q-menu anchor="bottom right" self="top right">
+                <q-list dense style="min-width: 170px">
+                  <q-item v-close-popup clickable @click="openStaffSettings(i)">
+                    <q-item-section>Clef, key and time</q-item-section>
+                  </q-item>
+                  <q-separator />
+                  <q-item v-close-popup clickable @click="duplicateStaff(i)">
+                    <q-item-section>Duplicate</q-item-section>
+                  </q-item>
+                  <q-item v-close-popup clickable :disable="i === 0" @click="moveStaff(i, -1)">
+                    <q-item-section>Move up</q-item-section>
+                  </q-item>
+                  <q-item
+                    v-close-popup
+                    clickable
+                    :disable="i === addOperState.staves.length - 1"
+                    @click="moveStaff(i, 1)"
+                  >
+                    <q-item-section>Move down</q-item-section>
+                  </q-item>
+                  <q-item v-close-popup clickable @click="clearStaff(i)">
+                    <q-item-section>Clear</q-item-section>
+                  </q-item>
+                  <q-item v-close-popup clickable class="text-negative" @click="removeStaff(i)">
+                    <q-item-section>Delete</q-item-section>
+                  </q-item>
+                </q-list>
+              </q-menu>
+            </q-btn>
           </div>
-          <q-slider
-            v-model="addOperState.tempo"
-            :min="30"
-            :max="240"
-            :step="1"
-            dense
-            color="primary"
-            class="ns-tempo-slider"
-            aria-label="Tempo"
-          />
-          <q-btn
-            flat
-            dense
-            round
-            icon="repeat"
-            class="ns-toggle"
-            :class="{ 'is-on': loop }"
-            :aria-pressed="loop"
-            aria-label="Loop"
-            @click="loop = !loop"
-          >
-            <q-tooltip>Loop</q-tooltip>
-          </q-btn>
-          <q-btn
-            flat
-            dense
-            round
-            icon="av_timer"
-            class="ns-toggle"
-            :class="{ 'is-on': metronome }"
-            :aria-pressed="metronome"
-            aria-label="Click on every beat"
-            @click="metronome = !metronome"
-          >
-            <q-tooltip>Click on every beat</q-tooltip>
-          </q-btn>
 
-          <span class="ns-transport-gap" />
-
-          <q-btn
-            flat
-            dense
-            no-caps
-            label="Tab"
-            class="ns-toggle ns-tab-toggle"
-            :class="{ 'is-on': addOperState.showTab }"
-            :aria-pressed="addOperState.showTab"
-            @click="addOperState.showTab = !addOperState.showTab"
-          >
-            <q-tooltip>Guitar tab under each staff</q-tooltip>
-          </q-btn>
-          <q-btn
-            flat
-            dense
-            round
-            icon="undo"
-            class="ns-quiet"
-            :disable="!canUndo"
-            aria-label="Undo"
-            @click="undo"
-          >
-            <q-tooltip>Undo (Ctrl Z)</q-tooltip>
-          </q-btn>
-          <q-btn
-            flat
-            dense
-            round
-            icon="redo"
-            class="ns-quiet"
-            :disable="!canRedo"
-            aria-label="Redo"
-            @click="redo"
-          >
-            <q-tooltip>Redo (Ctrl Shift Z)</q-tooltip>
-          </q-btn>
-          <q-btn
-            flat
-            dense
-            round
-            icon="print"
-            class="ns-quiet"
-            aria-label="Print"
-            @click="printSheet"
-          >
-            <q-tooltip>Print or save as PDF</q-tooltip>
-          </q-btn>
-          <q-btn
-            flat
-            dense
-            round
-            icon="keyboard"
-            class="ns-quiet"
-            aria-label="Keyboard shortcuts"
-            @click="showShortcuts = true"
-          >
-            <q-tooltip>Keyboard shortcuts</q-tooltip>
-          </q-btn>
-        </div>
-
-        <div ref="stavesBox" class="ns-staves">
-          <div
-            v-for="(staff, i) in addOperState.staves"
-            :key="staff.id"
-            :ref="(el) => (staffEls[i] = el)"
-            class="ns-staff"
-            :class="{ 'is-active': activeStaff === i }"
-          >
-            <div class="ns-staff-head">
-              <span class="ns-staff-num">{{ i + 1 }}</span>
-              <q-btn
-                v-if="ownSummary(staff)"
-                flat
-                dense
-                no-caps
-                size="sm"
-                class="ns-own"
-                :label="ownSummary(staff)"
-                :aria-label="`${staffNumber(i)} has its own settings: ${ownSummary(staff)}. Edit`"
-                @click="openStaffSettings(i)"
-              />
-              <span v-if="!staff.notes.length" class="ns-staff-empty">Empty</span>
-              <q-space />
-              <q-btn
-                flat
-                dense
-                round
-                size="sm"
-                icon="more_horiz"
-                class="ns-quiet"
-                :aria-label="`${staffNumber(i)} options`"
-              >
-                <q-menu anchor="bottom right" self="top right">
-                  <q-list dense style="min-width: 170px">
-                    <q-item v-close-popup clickable @click="openStaffSettings(i)">
-                      <q-item-section>Clef, key and time</q-item-section>
-                    </q-item>
-                    <q-separator />
-                    <q-item
-                      v-close-popup
-                      clickable
-                      :disable="!staff.notes.length"
-                      @click="copyStaffNotes(i)"
-                    >
-                      <q-item-section>Copy notes</q-item-section>
-                    </q-item>
-                    <q-item v-close-popup clickable @click="duplicateStaff(i)">
-                      <q-item-section>Duplicate</q-item-section>
-                    </q-item>
-                    <q-item v-close-popup clickable :disable="i === 0" @click="moveStaff(i, -1)">
-                      <q-item-section>Move up</q-item-section>
-                    </q-item>
-                    <q-item
-                      v-close-popup
-                      clickable
-                      :disable="i === addOperState.staves.length - 1"
-                      @click="moveStaff(i, 1)"
-                    >
-                      <q-item-section>Move down</q-item-section>
-                    </q-item>
-                    <q-item v-close-popup clickable @click="clearStaff(i)">
-                      <q-item-section>Clear</q-item-section>
-                    </q-item>
-                    <q-item v-close-popup clickable class="text-negative" @click="removeStaff(i)">
-                      <q-item-section>Delete</q-item-section>
-                    </q-item>
-                  </q-list>
-                </q-menu>
-              </q-btn>
-            </div>
-
-            <!-- the staff canvas is never scaled with CSS: its hit-testing uses raw
+          <!-- the staff canvas is never scaled with CSS: its hit-testing uses raw
                pixel offsets, so on narrow screens it scrolls sideways instead -->
-            <div class="ns-staff-scroll">
-              <SingleFiveLines
-                :width="addOperState.width"
-                :clef="staffConfigs[i].clef"
-                :beat="staffConfigs[i].beat"
-                :sharps="staffConfigs[i].sharps"
-                :flats="staffConfigs[i].flats"
-                :show-tab="addOperState.showTab"
-                :playing="playingIndex(i)"
-                :notes="staff.notes"
-                :min-lines="1"
-                :show-time-signature="showTime[i]"
-                :measure-start="measureStarts[i]"
-                :selected="staffSelection(i)"
-                @select="(sel) => onSelectNote(i, sel)"
-              />
-            </div>
+          <div class="ns-staff-scroll">
+            <SingleFiveLines
+              :width="addOperState.width"
+              :clef="resolved[i].clef"
+              :beat="resolved[i].beat"
+              :sharps="resolved[i].sharps"
+              :flats="resolved[i].flats"
+              :notes="staff.notes"
+              :min-lines="1"
+              :show-time-signature="showTime[i]"
+              :measure-start="measureStarts[i]"
+              :selected="staffSelection(i)"
+              @select="(sel) => onSelectNote(i, sel)"
+            />
           </div>
         </div>
 
@@ -1466,17 +881,6 @@ function allowOnlyDigits(e) {
           <q-btn color="primary" outline no-caps icon="add" label="Add note" @click="addNote" />
           <q-btn color="primary" outline no-caps icon="add" label="Add rest" @click="addRest" />
           <q-btn
-            v-if="copiedNotes"
-            color="primary"
-            outline
-            no-caps
-            icon="content_paste"
-            label="Paste"
-            @click="pasteNotes"
-          >
-            <q-tooltip>Paste copied notes (Ctrl V)</q-tooltip>
-          </q-btn>
-          <q-btn
             v-if="selectedItem"
             class="ns-delete"
             color="negative"
@@ -1490,7 +894,7 @@ function allowOnlyDigits(e) {
         <p class="ns-target">{{ addTarget }}</p>
 
         <p v-if="!selectedItem" class="ns-empty">
-          Select a note or rest on a staff to change it, or type A to G to write notes.
+          Select a note or rest on a staff to change it.
         </p>
         <div v-else class="ns-note-fields" :class="{ 'is-rest': kind === 'rest' }">
           <q-btn-toggle
@@ -1540,32 +944,6 @@ function allowOnlyDigits(e) {
             options-dense
             color="primary"
           />
-          <div class="ns-flags">
-            <q-checkbox v-model="dotted" label="Dotted" dense color="primary" />
-            <q-checkbox
-              v-if="kind === 'note'"
-              v-model="tied"
-              label="Tie to next"
-              dense
-              color="primary"
-            />
-          </div>
-          <div v-if="kind === 'note'" class="ns-acc-rows">
-            <div v-for="row in letterRows" :key="row.j" class="ns-acc-row">
-              <span class="ns-acc-letter">{{ row.letter }}</span>
-              <q-btn-toggle
-                :model-value="row.acc"
-                :options="ACCIDENTALS"
-                class="ns-kind"
-                dense
-                no-caps
-                unelevated
-                toggle-color="primary"
-                :aria-label="`Accidental for ${row.letter}`"
-                @update:model-value="(v) => setAccidental(row.j, v)"
-              />
-            </div>
-          </div>
         </div>
       </fieldset>
 
@@ -1727,21 +1105,6 @@ function allowOnlyDigits(e) {
         </fieldset>
       </div>
     </aside>
-
-    <q-dialog v-model="showShortcuts">
-      <q-card class="ns-shortcuts">
-        <q-card-section class="text-subtitle1">Keyboard shortcuts</q-card-section>
-        <q-card-section class="q-pt-none">
-          <div v-for="[keys, what] in SHORTCUTS" :key="keys" class="ns-shortcut">
-            <kbd>{{ keys }}</kbd>
-            <span>{{ what }}</span>
-          </div>
-        </q-card-section>
-        <q-card-actions align="right">
-          <q-btn v-close-popup flat no-caps label="Close" color="primary" />
-        </q-card-actions>
-      </q-card>
-    </q-dialog>
   </div>
 </template>
 
@@ -1915,57 +1278,6 @@ function allowOnlyDigits(e) {
 .ns-neck :deep(.griff-canvas) {
   border-color: var(--app-border);
   border-radius: 4px;
-}
-
-/* ----- playback and view bar ----- */
-
-.ns-transport {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 6px;
-  margin-bottom: 10px;
-}
-
-.ns-tempo {
-  min-width: 64px;
-  font-variant-numeric: tabular-nums;
-}
-
-.ns-tempo-value {
-  font-size: 1.05rem;
-  font-weight: 600;
-}
-
-.ns-tempo-unit {
-  margin-left: 3px;
-  font-size: 0.75rem;
-  color: var(--app-muted);
-}
-
-.ns-tempo-slider {
-  flex: 1 1 120px;
-  min-width: 100px;
-  max-width: 260px;
-}
-
-.ns-transport-gap {
-  flex: 1 1 0;
-}
-
-/* toggles read as on by colour and a filled background, not colour alone */
-.ns-toggle {
-  color: var(--app-muted);
-}
-
-.ns-toggle.is-on {
-  color: var(--ns-accent);
-  background: color-mix(in srgb, var(--ns-accent) 14%, transparent);
-}
-
-.ns-tab-toggle {
-  padding: 0 10px;
-  font-weight: 600;
 }
 
 /* ----- staves, laid out like the compases of the compás editor ----- */
@@ -2169,48 +1481,6 @@ function allowOnlyDigits(e) {
   border: 1px solid var(--app-border);
   background: var(--app-surface);
   color: var(--app-text);
-}
-
-.ns-flags,
-.ns-acc-rows {
-  grid-column: 1 / -1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 16px;
-  font-size: 0.85rem;
-}
-
-.ns-acc-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ns-acc-letter {
-  min-width: 12px;
-  font-weight: 600;
-}
-
-/* ----- shortcuts ----- */
-
-.ns-shortcuts {
-  min-width: min(380px, 92vw);
-  background: var(--app-surface);
-  color: var(--app-text);
-}
-
-.ns-shortcut {
-  display: grid;
-  grid-template-columns: 150px 1fr;
-  gap: 12px;
-  padding: 3px 0;
-  font-size: 0.875rem;
-}
-
-.ns-shortcut kbd {
-  font: inherit;
-  font-weight: 600;
-  color: var(--ns-accent);
 }
 
 /* ----- Clef, key and time signature ----- */

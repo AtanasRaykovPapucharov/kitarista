@@ -1,32 +1,19 @@
 <script setup>
-import { computed, nextTick, ref, toRaw, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import {
-  ACCIDENTALS,
-  BEAT_CONTEXT,
   NOTE_TYPES,
   STAFF_LETTERS,
   STAFF_OCTAVES,
   TECHNIQUES,
   fitStaffNote,
   lastPitched,
-  nearestOctave,
   parseChord,
   parseNotes,
-  placeOnStrings,
   staffBeats,
   staffLettersFor,
-  stepItem,
+  staffMidi,
 } from './music'
-import {
-  accOf,
-  copiedNotes,
-  letterOf,
-  resolveStaff,
-  respell,
-  withAcc,
-} from 'src/components/music/notation'
 import ChordDiagram from './ChordDiagram.vue'
-import MiniFretboard from './MiniFretboard.vue'
 import SingleFiveLines from 'src/components/music/SingleFiveLines.vue'
 
 const props = defineProps({
@@ -44,7 +31,6 @@ const emit = defineEmits([
   'pick',
   'preview',
   'audition',
-  'paste-melody',
   'copy',
   'paste',
   'clear',
@@ -95,7 +81,6 @@ const mode = ref('chord') // 'chord' | 'notes'
 
 const staff = computed(() => props.cell.staff || [])
 const selectedIndex = ref(null)
-const selectedLetter = ref(0) // which notehead of a stacked chord was tapped
 
 // opening a beat shows what is written on it; an empty beat keeps the current mode,
 // so writing a melody beat after beat stays on Notes
@@ -103,7 +88,6 @@ watch(
   () => props.cell,
   (cell) => {
     selectedIndex.value = null
-    selectedLetter.value = 0
     const hasStaff = !!cell.staff?.length
     if (hasStaff && !cell.chord) mode.value = 'notes'
     else if (cell.chord && !hasStaff) mode.value = 'chord'
@@ -128,9 +112,7 @@ const selectedNote = computed(() =>
 )
 
 const staffSelection = computed(() =>
-  selectedNote.value
-    ? { chordIndex: selectedIndex.value, letterIndex: selectedLetter.value }
-    : null,
+  selectedNote.value ? { chordIndex: selectedIndex.value, letterIndex: 0 } : null,
 )
 
 // the staff canvas is never scaled with CSS (its hit-testing uses raw pixels),
@@ -140,20 +122,28 @@ function onStaffResize({ width }) {
   staffWidth.value = Math.max(240, Math.floor(width) - 2)
 }
 
-// An accidental lasts to the end of the beat, so adding, removing or changing
-// one note could change how the notes after it sound. Every note that was not
-// edited keeps its pitch: signs are added where needed.
 function setStaff(next) {
-  const before = staff.value
-  const resolved = resolveStaff(before, BEAT_CONTEXT)
-  const alters = new Map(before.map((n, i) => [toRaw(n), resolved[i].pitches.map((p) => p.alter)]))
-  const desired = next.map((n) => alters.get(toRaw(n)) ?? null)
-  emit('patch', { staff: respell(next, BEAT_CONTEXT, desired) })
+  emit('patch', { staff: next })
 }
 
 function onStaffSelect(sel) {
   selectedIndex.value = sel ? sel.chordIndex : null
-  selectedLetter.value = sel?.letterIndex ?? 0
+}
+
+// octave that puts the letter closest to the note before it
+function nearestOctave(letter, from) {
+  const fromMidi = from ? staffMidi(from.note[from.note.length - 1], from.octave) : null
+  const options = STAFF_OCTAVES.filter((o) => o.letters.includes(letter))
+  if (fromMidi === null) return options.find((o) => o.value === 1)?.value ?? options[0].value
+  let best = options[0]
+  for (const o of options) {
+    if (
+      Math.abs(staffMidi(letter, o.value) - fromMidi) <
+      Math.abs(staffMidi(letter, best.value) - fromMidi)
+    )
+      best = o
+  }
+  return best.value
 }
 
 // pitched note to continue from: the last one at or before index, else the previous beat's
@@ -165,7 +155,7 @@ function addNote(letter, rest = false) {
   const at = selectedIndex.value ?? list.length - 1
   const from = pitchedBefore(at)
   const type = list[at]?.type ?? from?.type ?? 4
-  const pitch = letter || letterOf(from?.note?.[from.note.length - 1]) || 'E'
+  const pitch = letter || from?.note?.[from.note.length - 1] || 'E'
   const note = rest
     ? fitStaffNote({ rest: true, octave: from?.octave, type })
     : fitStaffNote({
@@ -177,26 +167,20 @@ function addNote(letter, rest = false) {
   next.splice(at + 1, 0, note)
   setStaff(next)
   selectedIndex.value = at + 1
-  selectedLetter.value = 0
   if (!rest) emit('audition', note)
 }
 
 const addRest = () => addNote(null, true)
 
-function replaceSelected(item, audition = false) {
-  const i = selectedIndex.value
-  if (i === null || !staff.value[i]) return
-  const next = [...staff.value]
-  next[i] = item
-  setStaff(next)
-  if (audition && !item.rest) emit('audition', item)
-}
-
 function updateSelected(patch) {
   const i = selectedIndex.value
   if (i === null || !staff.value[i]) return
-  const audition = 'note' in patch || 'octave' in patch || 'rest' in patch
-  replaceSelected(fitStaffNote({ ...staff.value[i], ...patch }), audition)
+  const note = fitStaffNote({ ...staff.value[i], ...patch })
+  const next = [...staff.value]
+  next[i] = note
+  setStaff(next)
+  if (!note.rest && ('note' in patch || 'octave' in patch || 'rest' in patch))
+    emit('audition', note)
 }
 
 function deleteSelectedNote() {
@@ -205,7 +189,6 @@ function deleteSelectedNote() {
   const next = staff.value.filter((_, k) => k !== i)
   setStaff(next)
   selectedIndex.value = next.length ? Math.max(0, i - 1) : null
-  selectedLetter.value = 0
   return true
 }
 
@@ -213,7 +196,7 @@ function deleteSelectedNote() {
 const kind = computed({
   get: () => (selectedNote.value?.rest ? 'rest' : 'note'),
   set: (value) => {
-    if (value === 'rest') return updateSelected({ rest: true, tie: false })
+    if (value === 'rest') return updateSelected({ rest: true })
     const from = pitchedBefore(selectedIndex.value - 1)
     updateSelected({
       rest: false,
@@ -227,15 +210,9 @@ const kindOptions = [
   { label: 'Rest', value: 'rest' },
 ]
 
-// letters only; each letter keeps its accidental while it stays in the chord
 const pitch = computed({
-  get: () => (selectedNote.value?.note ?? []).map(letterOf),
-  set: (letters) => {
-    const current = selectedNote.value?.note ?? []
-    updateSelected({
-      note: (letters || []).map((l) => current.find((s) => letterOf(s) === l) ?? l),
-    })
-  },
+  get: () => selectedNote.value?.note ?? [],
+  set: (value) => updateSelected({ note: value }),
 })
 const octave = computed({
   get: () => selectedNote.value?.octave ?? 1,
@@ -245,32 +222,6 @@ const duration = computed({
   get: () => selectedNote.value?.type ?? 4,
   set: (value) => updateSelected({ type: value }),
 })
-const dotted = computed({
-  get: () => !!selectedNote.value?.dot,
-  set: (value) => updateSelected({ dot: value }),
-})
-const tied = computed({
-  get: () => !!selectedNote.value?.tie,
-  set: (value) => updateSelected({ tie: value }),
-})
-
-// one accidental switch per letter of the selected note or chord
-const letterRows = computed(() =>
-  selectedNote.value && !selectedNote.value.rest
-    ? selectedNote.value.note.map((s, j) => ({ j, letter: letterOf(s), acc: accOf(s) }))
-    : [],
-)
-
-function setAccidental(j, acc) {
-  const n = selectedNote.value
-  if (!n || n.rest || !n.note[j]) return
-  updateSelected({ note: n.note.map((s, k) => (k === j ? withAcc(letterOf(s), acc) : s)) })
-}
-
-function stepSelected(delta) {
-  const moved = stepItem(selectedNote.value, delta)
-  if (moved) replaceSelected(moved, true)
-}
 
 const pitchOptions = computed(() => {
   const allowed = staffLettersFor(octave.value)
@@ -285,13 +236,6 @@ const octaveOptions = computed(() =>
     disable: !pitch.value.every((l) => o.letters.includes(l)),
   })),
 )
-
-// where the selected note is played (frets counted from the capo)
-const resolvedStaff = computed(() => resolveStaff(staff.value, BEAT_CONTEXT))
-const selectedPositions = computed(() => {
-  const r = selectedIndex.value === null ? null : resolvedStaff.value[selectedIndex.value]
-  return r && !r.rest ? placeOnStrings(r.pitches.map((p) => p.midi)) : []
-})
 
 function formatBeats(x) {
   const whole = Math.floor(x + 1e-9)
@@ -341,53 +285,7 @@ function typeRest() {
   return true
 }
 
-// keys for the selected note while the Notes tab is open; true when handled
-const DURATION_KEYS = { 1: 1, 2: 2, 3: 4, 4: 8, 5: 16, 6: 32, 7: 64 }
-const ACCIDENTAL_KEYS = { '#': '#', '+': '#', '-': 'b', '=': 'n' }
-
-function handleKey(e) {
-  if (mode.value !== 'notes') return false
-  const i = selectedIndex.value
-  const n = selectedNote.value
-  const key = e.key
-
-  if (key === 'ArrowLeft' || key === 'ArrowRight') {
-    if (i === null) return false
-    const j = i + (key === 'ArrowRight' ? 1 : -1)
-    // past the first or last note: let the compás editor move to the next beat
-    if (j < 0 || j >= staff.value.length) return false
-    selectedIndex.value = j
-    selectedLetter.value = 0
-    return true
-  }
-  if (!n) return false
-  if (key === 'ArrowUp' || key === 'ArrowDown') {
-    stepSelected((key === 'ArrowUp' ? 1 : -1) * (e.shiftKey ? 7 : 1))
-    return true
-  }
-  if (DURATION_KEYS[key]) {
-    updateSelected({ type: DURATION_KEYS[key] })
-    return true
-  }
-  if (key === '.') {
-    updateSelected({ dot: !n.dot })
-    return true
-  }
-  if (n.rest) return false
-  if (key === 't' || key === 'T') {
-    updateSelected({ tie: !n.tie })
-    return true
-  }
-  if (ACCIDENTAL_KEYS[key]) {
-    const j = Math.min(selectedLetter.value, n.note.length - 1)
-    const want = ACCIDENTAL_KEYS[key]
-    setAccidental(j, accOf(n.note[j]) === want ? '' : want)
-    return true
-  }
-  return false
-}
-
-defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote, handleKey })
+defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote })
 </script>
 
 <template>
@@ -501,7 +399,6 @@ defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote, handleKey }
           :sharps="0"
           :flats="0"
           :notes="staff"
-          free-scope="list"
           :selected="staffSelection"
           @select="onStaffSelect"
         />
@@ -510,18 +407,6 @@ defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote, handleKey }
       <div class="row items-center no-wrap q-gutter-x-sm q-mt-sm">
         <q-btn outline dense no-caps color="blue-5" icon="add" label="Add note" @click="addNote()" />
         <q-btn outline dense no-caps color="blue-5" icon="add" label="Add rest" @click="addRest" />
-        <q-btn
-          v-if="copiedNotes"
-          outline
-          dense
-          no-caps
-          color="blue-5"
-          icon="content_paste"
-          label="Paste melody"
-          @click="emit('paste-melody')"
-        >
-          <q-tooltip>Paste the copied notes from this beat on, one beat per quarter note</q-tooltip>
-        </q-btn>
         <q-btn
           v-if="selectedNote"
           outline
@@ -587,40 +472,6 @@ defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote, handleKey }
           options-dense
           color="blue-5"
         />
-        <div class="note-flags">
-          <q-checkbox v-model="dotted" label="Dotted" dense size="sm" color="blue-5" />
-          <q-checkbox
-            v-if="kind === 'note'"
-            v-model="tied"
-            label="Tie to next"
-            dense
-            size="sm"
-            color="blue-5"
-          />
-        </div>
-        <div v-if="kind === 'note'" class="acc-rows">
-          <div v-for="row in letterRows" :key="row.j" class="acc-row">
-            <span class="acc-letter">{{ row.letter }}</span>
-            <q-btn-toggle
-              :model-value="row.acc"
-              :options="ACCIDENTALS"
-              dense
-              no-caps
-              unelevated
-              size="sm"
-              color="grey-9"
-              text-color="grey-4"
-              toggle-color="blue-5"
-              :aria-label="`Accidental for ${row.letter}`"
-              @update:model-value="(v) => setAccidental(row.j, v)"
-            />
-          </div>
-        </div>
-      </div>
-
-      <div v-if="selectedPositions.length" class="q-mt-sm">
-        <MiniFretboard :positions="selectedPositions" :capo="capo" class="text-grey-5" />
-        <div v-if="capo" class="text-caption text-grey-6">Frets counted from the capo.</div>
       </div>
       <p v-else class="empty text-caption text-grey-6">
         {{
@@ -726,33 +577,8 @@ defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote, handleKey }
 }
 
 .note-kind,
-.note-flags,
-.acc-rows,
 .note-fields.is-rest > * {
   grid-column: 1 / -1;
-}
-
-.note-flags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 16px;
-}
-
-.acc-rows {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-}
-
-.acc-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.acc-letter {
-  min-width: 12px;
-  font-weight: 600;
 }
 
 .empty {

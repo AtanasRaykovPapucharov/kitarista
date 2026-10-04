@@ -1,10 +1,5 @@
 import { onBeforeUnmount, ref, watch } from 'vue'
 import { parseNotes, staffGroups, voiceChord } from './music'
-import {
-  STRING_DURATION,
-  createAudioContext,
-  stringBuffer as sharedStringBuffer,
-} from 'src/components/music/guitarSynth'
 
 /* =====================================================
    Audio engine for the compás editor
@@ -17,6 +12,7 @@ import {
 
 const LOOKAHEAD_MS = 25
 const SCHEDULE_AHEAD = 0.12
+const STRING_DURATION = 2.4
 
 export function useCompasAudio(sheet, { loopBar } = {}) {
   const isPlaying = ref(false)
@@ -32,14 +28,15 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
   let cursor = null
   let compasCount = 0
   let queue = []
-  let lastCell = null // previous beat played, for ties into the next beat
+  const stringCache = new Map()
   const voices = new Map()
 
   /* ---------------- context & buses ---------------- */
 
   function ensureContext() {
     if (!ctx) {
-      ctx = createAudioContext()
+      const AC = window.AudioContext || window.webkitAudioContext
+      ctx = new AC()
       master = ctx.createGain()
       master.connect(ctx.destination)
     }
@@ -189,8 +186,44 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
 
   /* ---------------- guitar ---------------- */
 
-  // Karplus-Strong plucked string, shared with the note sheet player
-  const stringBuffer = (midi) => sharedStringBuffer(ctx, midi)
+  // Karplus-Strong plucked string, cached per pitch
+  function stringBuffer(midi) {
+    const cached = stringCache.get(midi)
+    if (cached) return cached
+
+    const sr = ctx.sampleRate
+    const freq = 440 * 2 ** ((midi - 69) / 12)
+    const length = Math.floor(sr * STRING_DURATION)
+    const buffer = ctx.createBuffer(1, length, sr)
+    const out = buffer.getChannelData(0)
+
+    const period = Math.max(2, Math.round(sr / freq))
+    const ring = new Float32Array(period)
+    for (let i = 0; i < period; i++) ring[i] = Math.random() * 2 - 1
+    // soften the excitation: nylon strings, flesh + nail
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 1; i < period; i++) ring[i] = (ring[i] + ring[i - 1]) * 0.5
+    }
+    let mean = 0
+    for (let i = 0; i < period; i++) mean += ring[i]
+    mean /= period
+    for (let i = 0; i < period; i++) ring[i] = (ring[i] - mean) * 1.6
+
+    const t60 = Math.max(0.9, 3.2 - freq / 350)
+    const decay = Math.pow(0.001, 1 / (freq * t60))
+
+    let idx = 0
+    for (let i = 0; i < length; i++) {
+      const next = idx + 1 === period ? 0 : idx + 1
+      const v = ring[idx]
+      out[i] = v
+      ring[idx] = decay * 0.5 * (v + ring[next])
+      idx = next
+    }
+
+    stringCache.set(midi, buffer)
+    return buffer
+  }
 
   function pluck(bus, { midi, string }, time, { gain = 0.24, damp = 0 } = {}) {
     const src = ctx.createBufferSource()
@@ -256,7 +289,7 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
     return notes.map((n) => ({ string: n.string, midi: n.midi + capo }))
   }
 
-  function scheduleGuitar(bus, cell, time, secondsPerBeat, accented, { tiedIn = false } = {}) {
+  function scheduleGuitar(bus, cell, time, secondsPerBeat, accented) {
     const tech = new Set(cell.techniques || [])
     const capo = Number(sheet.capo) || 0
     const velocity = accented ? 1.15 : 0.9
@@ -311,15 +344,10 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
 
     // staff notes play one after another; a quarter note is one beat,
     // longer values ring on into the following beats
-    // a note tied from the one before is held, not played again
-    const staff = staffGroups(cell.staff, { tiedIn })
+    const staff = staffGroups(cell.staff)
     if (staff.length) {
       let at = time
       staff.forEach((group, gi) => {
-        if (group.rest || group.tiedIn) {
-          at += group.beats * secondsPerBeat
-          return
-        }
         const length = group.beats * secondsPerBeat
         const repeats = tech.has('tremolo') ? Math.max(1, Math.round(group.beats * 4)) : 1
         for (let r = 0; r < repeats; r++) {
@@ -353,13 +381,9 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
 
     const bar = sheet.bars[cursor.bar]
     const cell = bar?.cells[beatIndex]
-    const prevStaff = lastCell?.staff
-    const tiedIn = !!prevStaff?.length && !!prevStaff[prevStaff.length - 1]?.tie
-    lastCell = cell ?? null
     if (s.click && !cell?.silent) playClick(playBus, time, beat.accent)
     if (s.click && s.offbeat) playClick(playBus, time + secondsPerBeat / 2, false, 0.4)
-    if (s.guitar && cell)
-      scheduleGuitar(playBus, cell, time, secondsPerBeat, beat.accent, { tiedIn })
+    if (s.guitar && cell) scheduleGuitar(playBus, cell, time, secondsPerBeat, beat.accent)
   }
 
   function nextBar(index) {
@@ -438,7 +462,6 @@ export function useCompasAudio(sheet, { loopBar } = {}) {
       countIn: sheet.settings.countIn ? sheet.pattern.length : 0,
     }
     compasCount = 0
-    lastCell = null
     queue = []
     nextTime = ctx.currentTime + 0.08
 

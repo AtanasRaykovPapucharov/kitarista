@@ -2,9 +2,10 @@ export default {
   appName: 'kitarista',
   nav: {
     menu: 'Menu',
-    home: 'Main',
+    compas: 'Compás Sheet',
+    home: 'Home',
     tones: 'Tones',
-    notes: 'Notes',
+    notes: 'Notes Sheet',
     guitar: 'Guitar',
     intervals: 'Intervals',
     scales: 'Scales',
