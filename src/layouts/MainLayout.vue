@@ -11,8 +11,8 @@ const settings = useSettingsStore()
 const drawerWidth = 300
 
 const localeOptions = [
-  { value: 'bg', label: 'Български' },
   { value: 'en-US', label: 'English' },
+  { value: 'bg', label: 'Български' },
   { value: 'zh-CN', label: '中文' },
 ]
 
@@ -90,6 +90,7 @@ function closeLeftDrawer() {
               :key="loc.value"
               v-close-popup
               clickable
+              dense
               :active="settings.locale === loc.value"
               @click="settings.setLocale(loc.value)"
             >
