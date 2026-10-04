@@ -2,7 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { useQuasar } from 'quasar'
 import { COMPAS_MAP } from '../constants'
-import { SECTION_NAMES, TECHNIQUE_MAP, TOQUES, fitStaffNote, staffText } from './music'
+import { SECTION_NAMES, TECHNIQUE_MAP, TOQUES, fitStaffNote, lastPitched, staffText } from './music'
 import { useCompasAudio } from './useCompasAudio'
 import BeatEditor from './BeatEditor.vue'
 
@@ -387,7 +387,8 @@ function patchCell(patch) {
   if (selectedCell.value) Object.assign(selectedCell.value, patch)
 }
 
-// last staff note before the selected beat, so new notes continue the melody
+// last pitched staff note before the selected beat (rests skipped),
+// so new notes continue the melody
 const previousStaffNote = computed(() => {
   if (!selected.value) return null
   for (let b = selected.value.bar; b >= 0; b--) {
@@ -395,7 +396,8 @@ const previousStaffNote = computed(() => {
     const start = b === selected.value.bar ? selected.value.beat - 1 : cells.length - 1
     for (let i = start; i >= 0; i--) {
       const staff = cells[i]?.staff
-      if (staff?.length) return staff[staff.length - 1]
+      const note = staff?.length ? lastPitched(staff, staff.length - 1) : null
+      if (note) return note
     }
   }
   return null
@@ -403,7 +405,7 @@ const previousStaffNote = computed(() => {
 
 // play a single staff note while writing it
 function auditionNote(note) {
-  if (note && sheet.settings.guitar && !isPlaying.value)
+  if (note && !note.rest && sheet.settings.guitar && !isPlaying.value)
     audio.preview({ ...newCell(), staff: [note] })
 }
 
@@ -624,8 +626,9 @@ const SHORTCUTS = [
   ['← →', 'Previous or next beat'],
   ['↑ ↓', 'Same beat in the previous or next compás'],
   ['A to G', 'Type a chord, or add a note when the Notes tab is open'],
+  ['R', 'Add a rest when the Notes tab is open'],
   ['Enter', 'Edit the chord, Enter again moves on'],
-  ['Delete', 'Delete the selected note, or clear the beat'],
+  ['Delete', 'Delete the selected note or rest, or clear the beat'],
   ['Ctrl C / Ctrl V', 'Copy or paste a beat'],
   ['Ctrl Z / Ctrl Shift Z', 'Undo or redo'],
   ['Esc', 'Close the beat editor'],
@@ -690,6 +693,11 @@ function onKeydown(e) {
 
   if (mod && e.key.toLowerCase() === 'c' && !window.getSelection()?.toString()) return copyCell()
   if (mod && e.key.toLowerCase() === 'v') return pasteCell()
+
+  if (!mod && /^[rR]$/.test(e.key) && editor.value?.typeRest()) {
+    e.preventDefault()
+    return
+  }
 
   if (!mod && /^[a-gA-G]$/.test(e.key)) {
     e.preventDefault()

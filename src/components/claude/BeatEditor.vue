@@ -6,6 +6,7 @@ import {
   STAFF_OCTAVES,
   TECHNIQUES,
   fitStaffNote,
+  lastPitched,
   parseChord,
   parseNotes,
   staffBeats,
@@ -145,22 +146,31 @@ function nearestOctave(letter, from) {
   return best.value
 }
 
-function addNote(letter) {
+// pitched note to continue from: the last one at or before index, else the previous beat's
+const pitchedBefore = (index) => lastPitched(staff.value, index) ?? props.previousNote
+
+// adds after the selected note or rest, or at the end; rest = true adds a rest
+function addNote(letter, rest = false) {
   const list = staff.value
   const at = selectedIndex.value ?? list.length - 1
-  const from = list[at] ?? props.previousNote
+  const from = pitchedBefore(at)
+  const type = list[at]?.type ?? from?.type ?? 4
   const pitch = letter || from?.note?.[from.note.length - 1] || 'E'
-  const note = fitStaffNote({
-    note: [pitch],
-    octave: letter || !from ? nearestOctave(pitch, from) : from.octave,
-    type: from?.type ?? 4,
-  })
+  const note = rest
+    ? fitStaffNote({ rest: true, octave: from?.octave, type })
+    : fitStaffNote({
+        note: [pitch],
+        octave: letter || !from ? nearestOctave(pitch, from) : from.octave,
+        type,
+      })
   const next = [...list]
   next.splice(at + 1, 0, note)
   setStaff(next)
   selectedIndex.value = at + 1
-  emit('audition', note)
+  if (!rest) emit('audition', note)
 }
+
+const addRest = () => addNote(null, true)
 
 function updateSelected(patch) {
   const i = selectedIndex.value
@@ -169,7 +179,8 @@ function updateSelected(patch) {
   const next = [...staff.value]
   next[i] = note
   setStaff(next)
-  if ('note' in patch || 'octave' in patch) emit('audition', note)
+  if (!note.rest && ('note' in patch || 'octave' in patch || 'rest' in patch))
+    emit('audition', note)
 }
 
 function deleteSelectedNote() {
@@ -180,6 +191,24 @@ function deleteSelectedNote() {
   selectedIndex.value = next.length ? Math.max(0, i - 1) : null
   return true
 }
+
+// switch the selected item between a note and a rest of the same length
+const kind = computed({
+  get: () => (selectedNote.value?.rest ? 'rest' : 'note'),
+  set: (value) => {
+    if (value === 'rest') return updateSelected({ rest: true })
+    const from = pitchedBefore(selectedIndex.value - 1)
+    updateSelected({
+      rest: false,
+      note: from ? [...from.note] : ['E'],
+      octave: from?.octave ?? 1,
+    })
+  },
+})
+const kindOptions = [
+  { label: 'Note', value: 'note' },
+  { label: 'Rest', value: 'rest' },
+]
 
 const pitch = computed({
   get: () => selectedNote.value?.note ?? [],
@@ -249,7 +278,14 @@ function typeLetter(letter) {
   else focusChord(letter)
 }
 
-defineExpose({ focusChord, typeLetter, deleteSelectedNote })
+// R: add a rest when the Notes tab is open
+function typeRest() {
+  if (mode.value !== 'notes') return false
+  addRest()
+  return true
+}
+
+defineExpose({ focusChord, typeLetter, typeRest, deleteSelectedNote })
 </script>
 
 <template>
@@ -370,6 +406,7 @@ defineExpose({ focusChord, typeLetter, deleteSelectedNote })
 
       <div class="row items-center no-wrap q-gutter-x-sm q-mt-sm">
         <q-btn outline dense no-caps color="blue-5" icon="add" label="Add note" @click="addNote()" />
+        <q-btn outline dense no-caps color="blue-5" icon="add" label="Add rest" @click="addRest" />
         <q-btn
           v-if="selectedNote"
           outline
@@ -377,15 +414,28 @@ defineExpose({ focusChord, typeLetter, deleteSelectedNote })
           no-caps
           color="negative"
           icon="delete"
-          label="Delete note"
+          label="Delete"
           @click="deleteSelectedNote"
         />
         <q-space />
         <span class="text-caption text-grey-6 ellipsis">{{ beatsLabel }}</span>
       </div>
 
-      <div v-if="selectedNote" class="note-fields q-mt-sm">
+      <div v-if="selectedNote" class="note-fields q-mt-sm" :class="{ 'is-rest': kind === 'rest' }">
+        <q-btn-toggle
+          v-model="kind"
+          :options="kindOptions"
+          class="note-kind"
+          spread
+          dense
+          no-caps
+          unelevated
+          color="grey-9"
+          text-color="grey-4"
+          toggle-color="blue-5"
+        />
         <q-select
+          v-if="kind === 'note'"
           v-model="pitch"
           class="note-pitch"
           label="Pitch"
@@ -400,6 +450,7 @@ defineExpose({ focusChord, typeLetter, deleteSelectedNote })
           color="blue-5"
         />
         <q-select
+          v-if="kind === 'note'"
           v-model="octave"
           label="Octave"
           :options="octaveOptions"
@@ -425,8 +476,8 @@ defineExpose({ focusChord, typeLetter, deleteSelectedNote })
       <p v-else class="empty text-caption text-grey-6">
         {{
           staff.length
-            ? 'Tap a note on the staff to change its pitch, octave and duration.'
-            : 'Add a note, or press A to G to write one straight onto the staff.'
+            ? 'Tap a note or rest on the staff to change it.'
+            : 'Add a note or rest, or press A to G for a note and R for a rest.'
         }}
       </p>
 
@@ -523,6 +574,11 @@ defineExpose({ focusChord, typeLetter, deleteSelectedNote })
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1.6fr);
   gap: 8px;
+}
+
+.note-kind,
+.note-fields.is-rest > * {
+  grid-column: 1 / -1;
 }
 
 .empty {

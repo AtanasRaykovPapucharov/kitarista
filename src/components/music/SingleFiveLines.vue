@@ -21,6 +21,11 @@ const props = defineProps({
     type: Object,
     default: null,
   },
+  // time signature is drawn on the first staff of a piece only
+  showTimeSignature: { type: Boolean, default: true },
+  // part of a measure already filled by earlier staves (whole note = 1),
+  // so barlines carry on across staves
+  measureStart: { type: Number, default: 0 },
 })
 
 const staffCanvas = ref(null)
@@ -91,17 +96,127 @@ function drawNoteFlags(c, stemX, tipY, type, stemUp) {
   c.restore()
 }
 
+/* ---------- rests ----------
+   A note with { rest: true } is a rest of its type.
+   Staff lines sit at y 40, 52, 64, 76, 88; x is the slot centre. */
+function drawRest(c, x, type) {
+  c.save()
+  c.fillStyle = '#000'
+  c.strokeStyle = '#000'
+  c.lineCap = 'round'
+  c.lineJoin = 'round'
+
+  if (type === 1) {
+    c.fillRect(x - 7, 52, 14, 6) // whole: hangs from the 4th line
+  } else if (type === 2) {
+    c.fillRect(x - 7, 58, 14, 6) // half: sits on the middle line
+  } else if (type === 4) {
+    const seg = (x1, y1, x2, y2, w) => {
+      c.lineWidth = w
+      c.beginPath()
+      c.moveTo(x1, y1)
+      c.lineTo(x2, y2)
+      c.stroke()
+    }
+    seg(x - 3, 47, x + 3, 55, 1.6)
+    seg(x + 3, 55, x - 3, 63, 4.2)
+    seg(x - 3, 63, x + 3, 71, 1.6)
+    c.lineWidth = 2.6
+    c.beginPath()
+    c.moveTo(x + 3, 71)
+    c.bezierCurveTo(x - 6, 66, x - 7, 76, x + 1, 80)
+    c.stroke()
+  } else {
+    // eighth and shorter: one flag per FLAG_COUNTS step on a slanted stem
+    const k = FLAG_COUNTS[type] || 1
+    const top = 56 - (k - 1) * 8
+    const bottom = top + 22 + (k - 1) * 10
+    const sx = x + 4
+    const stemX = (y) => sx - (y - top) * 0.25
+    c.lineWidth = 1.5
+    c.beginPath()
+    c.moveTo(sx, top)
+    c.lineTo(stemX(bottom), bottom)
+    c.stroke()
+    for (let i = 0; i < k; i++) {
+      const ay = top + 1 + i * 10
+      const ax = stemX(ay)
+      const hx = ax - 7
+      const hy = ay + 2
+      c.beginPath()
+      c.arc(hx, hy, 2.9, 0, Math.PI * 2)
+      c.fill()
+      c.lineWidth = 1.4
+      c.beginPath()
+      c.moveTo(hx, hy + 1.5)
+      c.quadraticCurveTo(ax - 3, ay + 4.5, ax, ay)
+      c.stroke()
+    }
+  }
+  c.restore()
+}
+
+/* ---------- bass clef ----------
+   Guitar music is written an octave above how it sounds. On a bass staff the
+   notes are placed at their sounding pitch instead, so the open low E (octave
+   'm' E) sits one ledger line below the staff. Too-high notes drop an octave
+   and get an 8va mark. Returns the y of the notehead. */
+const LETTER_STEPS = { C: 0, D: 1, E: 2, F: 3, G: 4, A: 5, B: 6 }
+const WRITTEN_OCTAVES = { m: 3, 1: 4, 2: 5, 3: 6 }
+
+function drawBassPitch(c, x, letter, octave, type) {
+  const step = ((WRITTEN_OCTAVES[octave] ?? 4) - 1) * 7 + (LETTER_STEPS[letter] ?? 0)
+  let y = 88 - (step - 18) * 6 // G2 sits on the bottom line, 6px per step
+  let ottava = false
+  if (y < 4) {
+    y += 42
+    ottava = true
+  }
+
+  c.beginPath()
+  for (let ly = 100; ly <= y + 0.5; ly += 12) {
+    c.moveTo(x - 13, ly)
+    c.lineTo(x + 13, ly)
+  }
+  for (let ly = 28; ly >= y - 0.5; ly -= 12) {
+    c.moveTo(x - 13, ly)
+    c.lineTo(x + 13, ly)
+  }
+  c.stroke()
+
+  if (ottava) {
+    c.save()
+    c.font = 'italic 10px Times New Roman'
+    c.textAlign = 'center'
+    c.fillText('8va', x, Math.max(9, y - 9))
+    c.restore()
+  }
+
+  if (type !== 1) {
+    const up = y > 64 // below the middle line: stem up
+    const stemX = up ? x + 7 : x - 7
+    const tipY = up ? y - 30 : y + 30
+    c.beginPath()
+    c.moveTo(stemX, y)
+    c.lineTo(stemX, tipY)
+    c.stroke()
+    drawNoteFlags(c, stemX, tipY, type, up)
+  }
+  return y
+}
+
 const drawNotes = () => {
   const c = ctx.value
   c.fillStyle = '#000'
   noteHitboxes.value = []
+  notesCoordinates.value = []
 
   // whole-note fraction filled in the current measure, per the time signature
   const beatParts = props.beat ? props.beat.split('/').map((b) => parseInt(b.trim())) : null
   const measureDuration = beatParts ? beatParts[0] / beatParts[1] : null
-  let measureFill = 0
+  let measureFill = props.measureStart || 0
 
-  if (!props.clef || props.clef === 'treble') {
+  {
     const perLine = notesPerLine.value
     let xInit = !props.clef ? 140 : 175
     if (noSharpsAndFlats.value) xInit -= 77
@@ -117,8 +232,31 @@ const drawNotes = () => {
       c.save()
       c.translate(0, lineTop)
 
-      for (const [letterIndex, n] of el.note.entries()) {
-        switch (el.octave) {
+      if (el.rest) {
+        drawRest(c, coord.x, el.type)
+        noteHitboxes.value.push({
+          x: coord.x,
+          y: 64 + lineTop,
+          r: 18,
+          chordIndex: index,
+          letterIndex: 0,
+        })
+        if (props.selected && props.selected.chordIndex === index) {
+          c.save()
+          c.strokeStyle = '#e53935'
+          c.lineWidth = 2
+          c.beginPath()
+          if (c.roundRect) c.roundRect(coord.x - 12, 42, 24, 44, 6)
+          else c.rect(coord.x - 12, 42, 24, 44)
+          c.stroke()
+          c.restore()
+        }
+      }
+
+      for (const [letterIndex, n] of (el.rest ? [] : el.note).entries()) {
+        if (props.clef === 'bass') coord.y = drawBassPitch(c, coord.x, n, el.octave, el.type)
+        // treble clef, or no clef: guitar notation as written
+        else switch (el.octave) {
           case 'm':
             switch (n) {
               case 'E':
@@ -195,6 +333,7 @@ const drawNotes = () => {
           case 1:
             switch (n) {
               case 'C':
+                coord.y = 100 // middle C; reset in case a higher letter of the chord came first
                 c.beginPath()
                 c.moveTo(coord.x - 13, coord.y)
                 c.lineTo(coord.x + 13, coord.y)
@@ -362,8 +501,6 @@ const drawNotes = () => {
 
       c.restore()
     }
-  } else {
-    console.log('Base clef: ', props.clef === 'bass')
   }
 }
 
@@ -387,7 +524,7 @@ const drawStaff = () => {
 }
 
 const drawTimeSignature = () => {
-  if (!props.beat) return
+  if (!props.beat || !props.showTimeSignature) return
 
   ctx.value.save()
   ctx.value.fillStyle = 'purp'
@@ -407,7 +544,8 @@ const drawTimeSignature = () => {
   ctx.value.restore()
 }
 
-// Sharps & flats
+// Sharps & flats (positions are for treble; the bass staff sits one line lower)
+const keyShift = computed(() => (props.clef === 'bass' ? 12 : 0))
 const drawSharps = () => {
   if (!props.sharps) return
 
@@ -446,7 +584,7 @@ const drawSharps = () => {
           break
       }
 
-      ctx.value.fillText('♯', x, y + lineTop)
+      ctx.value.fillText('♯', x, y + lineTop + keyShift.value)
       ctx.value.restore()
     }
   }
@@ -490,7 +628,7 @@ const drawFlats = () => {
           break
       }
 
-      ctx.value.fillText('♭', x, y + lineTop)
+      ctx.value.fillText('♭', x, y + lineTop + keyShift.value)
       ctx.value.restore()
     }
   }
@@ -556,10 +694,10 @@ const canvasPoint = (ev) => {
   emit('point', { x, y })
 
   let closest = null
-  let closestDist = HIT_RADIUS
+  let closestDist = Infinity
   for (const box of noteHitboxes.value) {
     const dist = Math.hypot(box.x - x, box.y - y)
-    if (dist <= closestDist) {
+    if (dist <= (box.r || HIT_RADIUS) && dist < closestDist) {
       closest = box
       closestDist = dist
     }

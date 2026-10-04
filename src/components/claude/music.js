@@ -298,6 +298,7 @@ export const SECTION_NAMES = [
 /* =====================================================
    Staff notes, same model as NoteSheet / SingleFiveLines
    { note: ['E'], octave: 'm' | 1 | 2 | 3, type: 1 | 2 | 4 | 8 | 16 | 32 | 64 }
+   A rest is { rest: true, note: [], octave, type }: it takes its time, silently.
    Guitar notation on the treble clef: it sounds an octave
    lower than written, so 'm' E is the open 6th string and
    octave 3 E is the 1st string at the 12th fret.
@@ -329,10 +330,14 @@ export function staffLettersFor(octave) {
   return STAFF_OCTAVE_MAP.get(octave)?.letters ?? STAFF_LETTERS
 }
 
-/** Clean a staff note so SingleFiveLines can always draw it. */
+/** Clean a staff note (or rest) so SingleFiveLines can always draw it. */
 export function fitStaffNote(raw) {
   const o = raw?.octave
   const octave = o === 'm' ? 'm' : STAFF_OCTAVE_MAP.has(Number(o)) ? Number(o) : 1
+  if (raw?.rest) {
+    const type = NOTE_TYPE_VALUES.includes(Number(raw.type)) ? Number(raw.type) : 4
+    return { rest: true, note: [], octave, type }
+  }
   const allowed = staffLettersFor(octave)
   const letters = (Array.isArray(raw?.note) ? raw.note : [raw?.note])
     .map((l) => String(l || '').toUpperCase())
@@ -375,7 +380,9 @@ export function placeOnStrings(midis) {
 export function staffGroups(staff) {
   if (!Array.isArray(staff)) return []
   return staff.map(fitStaffNote).map((n) => ({
-    notes: placeOnStrings(n.note.map((l) => staffMidi(l, n.octave)).filter((m) => m !== null)),
+    notes: n.rest
+      ? []
+      : placeOnStrings(n.note.map((l) => staffMidi(l, n.octave)).filter((m) => m !== null)),
     beats: 4 / n.type,
   }))
 }
@@ -384,7 +391,15 @@ export function staffBeats(staff) {
   return (staff || []).reduce((sum, n) => sum + 4 / (Number(n?.type) || 4), 0)
 }
 
-/** "E F G+B", for the grid and the text export */
+/** Last note with a pitch at or before index, skipping rests. */
+export function lastPitched(staff, index) {
+  for (let i = Math.min(index, (staff?.length ?? 0) - 1); i >= 0; i--) {
+    if (!staff[i]?.rest && staff[i]?.note?.length) return staff[i]
+  }
+  return null
+}
+
+/** "E – G+B" (a dash is a rest), for the grid and the text export */
 export function staffText(staff) {
-  return (staff || []).map((n) => (n.note || []).join('+')).join(' ')
+  return (staff || []).map((n) => (n.rest ? '–' : (n.note || []).join('+'))).join(' ')
 }
