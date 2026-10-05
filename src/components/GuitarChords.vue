@@ -287,7 +287,7 @@ watch(
       />
       <q-separator vertical class="q-mx-sm" size="2px" />
       <label class="q-pt-sm q-pr-sm">m</label>
-      <q-toggle dense size="xs" v-model="minor" :color="$q.dark.isActive ? 'black' : 'white'" />
+      <q-toggle dense size="xs" v-model="minor" :color="!$q.dark.isActive ? 'black' : 'white'" />
       <q-separator vertical class="q-mx-sm" size="2px" />
       <q-option-group
         v-model="sus"
@@ -311,10 +311,8 @@ watch(
         v-model="sus"
         :options="susOptions.filter((s) => s.label.length >= 4 && s.label !== 'maj7')"
         inline
-        color="grey-10"
         type="checkbox"
         dense
-        dark
         size="xs"
       />
     </div>

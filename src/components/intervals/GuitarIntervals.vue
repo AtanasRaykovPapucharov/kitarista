@@ -645,6 +645,7 @@ onMounted(async () => {
           bg-color="grey-10"
           :label="t('baseNoteLabel')"
           @update:model-value="onBaseNoteChange"
+          :style="{ width: $q.screen.lt.sm ? '50%' : '100px' }"
         />
         <q-toggle v-model="showCompound" :label="t('showCompound')" color="teal" dense />
       </div>
