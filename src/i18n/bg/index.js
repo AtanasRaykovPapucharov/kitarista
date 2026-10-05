@@ -8,7 +8,7 @@ export default {
     notes: 'Нотен лист',
     guitar: 'Китара',
     intervals: 'Интервали',
-    scales: 'Скали',
+    scales: 'Ладове и Гами',
     chords: 'Акорди',
     flamenco: 'Фламенко',
     about: 'За приложението',

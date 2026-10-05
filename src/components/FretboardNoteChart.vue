@@ -1,11 +1,43 @@
 <template>
   <q-card flat bordered class="fretboard-note-chart">
+    <!-- ===== Selection readout + Clear ===== -->
+    <q-card-section class="fnc-toolbar">
+      <div class="fnc-selection">
+        <template v-if="selectedList.length">
+          <q-chip
+            v-for="p in selectedList"
+            :key="p.key"
+            dense
+            removable
+            class="fnc-chip"
+            :remove-aria-label="t('remove')"
+            @remove="toggle(p.key)"
+            @mouseenter="hovered = p.key"
+            @mouseleave="unhover(p.key)"
+          >
+            <span class="fnc-chip-pos">{{ posLabel(p.c, p.fret) }}</span
+            >{{ p.name }}
+          </q-chip>
+        </template>
+        <span v-else class="fnc-hint">{{ t('hint') }}</span>
+      </div>
+      <q-btn
+        flat
+        dense
+        no-caps
+        padding="xs md"
+        :label="t('clear')"
+        :disable="!selectedList.length"
+        @click="clear"
+      />
+    </q-card-section>
+
     <q-card-section class="q-pa-sm">
       <svg
         :viewBox="`0 0 ${VIEW_W} ${VIEW_H}`"
         class="fretboard-note-chart__svg"
         xmlns="http://www.w3.org/2000/svg"
-        role="img"
+        role="group"
         :aria-label="`${t('title')} ${t('subtitle')}`"
       >
         <defs>
@@ -123,6 +155,30 @@
           </g>
         </g>
 
+        <!-- clickable positions on the fretboard (open string + every fret) -->
+        <g class="fnc-board-cells">
+          <g
+            v-for="cell in board.cells"
+            :key="cell.key"
+            class="fnc-cell fnc-pos"
+            :class="cellClass(cell.key)"
+            role="button"
+            tabindex="0"
+            :aria-pressed="selectedSet.has(cell.key)"
+            :aria-label="cellLabel(cell)"
+            v-on="cellEvents(cell.key)"
+          >
+            <title>{{ cell.name }}</title>
+            <rect class="fnc-hit" v-bind="cell.hit" />
+            <circle
+              :class="['fnc-marker', { 'fnc-marker--open': cell.fret === 0 }]"
+              :cx="cell.cx"
+              :cy="cell.cy"
+              :r="cell.fret === 0 ? 10 : 13"
+            />
+          </g>
+        </g>
+
         <!-- ===== Notation (right) ===== -->
         <g class="fnc-staves">
           <text :x="(colX(0) + colX(6)) / 2" y="200" text-anchor="middle" class="fnc-heading">
@@ -169,38 +225,51 @@
               fill="currentColor"
             />
 
-            <!-- notes -->
-            <g v-for="(note, i) in row.notes" :key="i">
-              <title>{{ note.title }}</title>
-              <line
-                v-for="(l, j) in note.ledgers"
-                :key="`l-${j}`"
-                :x1="l.x1"
-                :y1="l.y"
-                :x2="l.x2"
-                :y2="l.y"
-                stroke="currentColor"
-                stroke-width="1.3"
-              />
-              <use
-                v-if="note.acc"
-                :href="`#${ids[note.acc]}`"
-                :transform="glyph(note.accX, note.y)"
-                fill="currentColor"
-              />
-              <use
-                :href="`#${ids.head}`"
-                :transform="glyph(note.headX, note.y)"
-                fill="currentColor"
-              />
-              <line
-                :x1="note.stem.x"
-                :y1="note.stem.y1"
-                :x2="note.stem.x"
-                :y2="note.stem.y2"
-                stroke="currentColor"
-                stroke-width="1.2"
-              />
+            <!-- notes (one clickable cell per string × fret) -->
+            <g
+              v-for="cell in row.cells"
+              :key="cell.key"
+              class="fnc-cell fnc-note"
+              :class="cellClass(cell.key)"
+              role="button"
+              tabindex="0"
+              :aria-pressed="selectedSet.has(cell.key)"
+              :aria-label="cellLabel(cell)"
+              v-on="cellEvents(cell.key)"
+            >
+              <title>{{ cell.name }}</title>
+              <rect class="fnc-hit" v-bind="cell.hit" rx="6" />
+              <g v-for="(note, i) in cell.heads" :key="i">
+                <line
+                  v-for="(l, j) in note.ledgers"
+                  :key="`l-${j}`"
+                  :x1="l.x1"
+                  :y1="l.y"
+                  :x2="l.x2"
+                  :y2="l.y"
+                  stroke="currentColor"
+                  stroke-width="1.3"
+                />
+                <use
+                  v-if="note.acc"
+                  :href="`#${ids[note.acc]}`"
+                  :transform="glyph(note.accX, note.y)"
+                  fill="currentColor"
+                />
+                <use
+                  :href="`#${ids.head}`"
+                  :transform="glyph(note.headX, note.y)"
+                  fill="currentColor"
+                />
+                <line
+                  :x1="note.stem.x"
+                  :y1="note.stem.y1"
+                  :x2="note.stem.x"
+                  :y2="note.stem.y2"
+                  stroke="currentColor"
+                  stroke-width="1.2"
+                />
+              </g>
             </g>
           </g>
         </g>
@@ -225,25 +294,45 @@ const MESSAGES = {
     subtitle: 'за разположението на тоновете върху струните и прагчетата:',
     strings: 'СТРУНИ',
     fret: '{n} прагче',
+    open: 'празна',
+    clear: 'Изчисти',
+    remove: 'Премахни',
+    hint: 'Щракнете върху нота или върху място на грифа, за да го отбележите.',
   },
   en: {
     title: 'CHART',
     subtitle: 'of note positions on the strings and frets:',
     strings: 'STRINGS',
     fret: 'Fret {n}',
+    open: 'Open',
+    clear: 'Clear',
+    remove: 'Remove',
+    hint: 'Click a note or a spot on the fretboard to mark it.',
   },
   zh: {
     title: '音位表',
     subtitle: '各弦与各品上的音符位置：',
     strings: '弦',
     fret: '第 {n} 品',
+    open: '空弦',
+    clear: '清除',
+    remove: '移除',
+    hint: '点击音符或指板上的位置进行标记。',
   },
 }
 
 const props = defineProps({
   /** Force a language: 'bg' | 'en' | 'zh' (also 'en-US', 'zh-CN', …). */
   locale: { type: String, default: null },
+  /**
+   * Optional v-model: the marked positions as [{ string: 1–6, fret: 0–17 }]
+   * (string 6 = low E, fret 0 = open). Leave it out and the chart keeps
+   * its own selection.
+   */
+  modelValue: { type: Array, default: undefined },
 })
+
+const emit = defineEmits(['update:modelValue'])
 
 const instance = getCurrentInstance()
 
@@ -333,6 +422,17 @@ const STRING_NAMES = ['E', 'A', 'D', 'G', 'B', 'E']
 // written pitch for guitar (sounds an octave lower): E3 A3 D4 G4 B4 E5
 const OPEN_MIDI = [52, 57, 62, 67, 71, 76]
 
+const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
+const PC_TO_LETTER = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 }
+const E4_STEP = 2 + 7 * 4 // bottom staff line
+
+/** c = column 0–5 (low E … high E), fret = 0–17 */
+const keyOf = (c, fret) => `${c}-${fret}`
+const noteName = (c, fret) =>
+  spell(OPEN_MIDI[c] + fret)
+    .map((n) => n.name)
+    .join(' / ')
+
 const rowY = [ROW0_Y]
 for (let i = 0; i < FRETS; i++) rowY.push(rowY[i] + GAP0 * RATIO ** i)
 
@@ -387,6 +487,25 @@ const board = (() => {
       return { n, y: rowY[n], x1: e.l, x2: e.r }
     }),
     dots: [5, 7, 12].map((fret) => ({ fret, x: midDG(dotY(fret)), y: dotY(fret) })),
+    // one clickable spot per string × fret; fret 0 sits just above the nut
+    cells: STRING_NAMES.flatMap((_, c) =>
+      Array.from({ length: FRETS + 1 }, (_, fret) => {
+        const top = fret === 0 ? NUT_Y - 44 : rowY[fret - 1]
+        const bottom = fret === 0 ? NUT_Y : rowY[fret]
+        const cy = fret === 0 ? NUT_Y - 20 : (top + bottom) / 2
+        const cx = stringX(c, cy)
+        const w = stringX(1, cy) - stringX(0, cy)
+        return {
+          key: keyOf(c, fret),
+          c,
+          fret,
+          cx,
+          cy,
+          name: noteName(c, fret),
+          hit: { x: cx - w / 2, y: top, width: w, height: bottom - top },
+        }
+      }),
+    ),
   }
 })()
 
@@ -397,10 +516,6 @@ const STAFF_X0 = 590
 const CLEF_W = 64
 const COL_W = 140
 const colX = (c) => STAFF_X0 + CLEF_W + c * COL_W
-
-const LETTERS = ['C', 'D', 'E', 'F', 'G', 'A', 'B']
-const PC_TO_LETTER = { 0: 0, 2: 1, 4: 2, 5: 3, 7: 4, 9: 5, 11: 6 }
-const E4_STEP = 2 + 7 * 4 // bottom staff line
 
 /** One pitch → one natural, or a sharp/flat enharmonic pair (as in the original chart). */
 function spell(midi) {
@@ -426,12 +541,11 @@ const rows = rowY.map((y, fret) => {
   const bars = []
   for (let c = start + 1; c <= 6; c++) bars.push(colX(c))
 
-  const notes = []
+  const cells = []
   for (let c = start; c < 6; c++) {
     const spelled = spell(OPEN_MIDI[c] + fret)
     const cx = colX(c) + COL_W / 2
-    const title = spelled.map((n) => n.name).join(' / ')
-    spelled.forEach((n, k) => {
+    const heads = spelled.map((n, k) => {
       const hx = spelled.length === 1 ? cx : cx + (k === 0 ? -PAIR_DX : PAIR_DX)
       const headX = hx - HEAD_W / 2
       const ny = bottomLine - (n.pos * S) / 2
@@ -443,8 +557,7 @@ const rows = rowY.map((y, fret) => {
       for (let p = 10; p <= n.pos; p += 2)
         ledgers.push({ x1: lx1, x2: lx2, y: bottomLine - (p * S) / 2 })
       const up = n.pos < 4
-      notes.push({
-        title,
+      return {
         y: ny,
         headX,
         acc: n.acc,
@@ -453,7 +566,18 @@ const rows = rowY.map((y, fret) => {
         stem: up
           ? { x: headX + HEAD_W - 0.6, y1: ny - 0.17 * S, y2: ny - 3.5 * S }
           : { x: headX + 0.6, y1: ny + 0.17 * S, y2: ny + 3.5 * S },
-      })
+      }
+    })
+    // hit area: the column, from halfway to the row above to halfway to the row below
+    const top = fret === 0 ? y - 56 : (rowY[fret - 1] + y) / 2
+    const bottom = fret === FRETS ? y + 48 : (y + rowY[fret + 1]) / 2
+    cells.push({
+      key: keyOf(c, fret),
+      c,
+      fret,
+      name: spelled.map((n) => n.name).join(' / '),
+      heads,
+      hit: { x: colX(c) + 3, y: top + 2, width: COL_W - 6, height: bottom - top - 4 },
     })
   }
 
@@ -461,14 +585,226 @@ const rows = rowY.map((y, fret) => {
     fret,
     x0,
     bars,
-    notes,
+    cells,
     gLineY: y + S,
     staffLines: [y - 2 * S, y - S, y, y + S, y + 2 * S],
   }
 })
+
+/* ------------------------------------------------------------------ *
+ *  Selection — shared by the fretboard and the notation, so marking
+ *  a spot on one side marks the matching note on the other.
+ * ------------------------------------------------------------------ */
+const CIRCLED = ['①', '②', '③', '④', '⑤', '⑥']
+
+const localKeys = ref([])
+
+function keysFromModel(list) {
+  const out = []
+  for (const p of list ?? []) {
+    const s = Number(p?.string)
+    const f = Number(p?.fret)
+    if (!Number.isInteger(s) || s < 1 || s > 6) continue
+    if (!Number.isInteger(f) || f < 0 || f > FRETS) continue
+    const k = keyOf(6 - s, f)
+    if (!out.includes(k)) out.push(k)
+  }
+  return out
+}
+
+// follow the parent's v-model when there is one
+watch(
+  () => props.modelValue,
+  (v) => {
+    if (v !== undefined) localKeys.value = keysFromModel(v)
+  },
+  { immediate: true, deep: true },
+)
+
+const selectedKeys = computed(() => localKeys.value)
+const selectedSet = computed(() => new Set(selectedKeys.value))
+
+function setKeys(keys) {
+  localKeys.value = keys
+  emit(
+    'update:modelValue',
+    keys.map((k) => {
+      const [c, fret] = k.split('-').map(Number)
+      return { string: 6 - c, fret }
+    }),
+  )
+}
+
+function toggle(key) {
+  const keys = selectedKeys.value
+  setKeys(keys.includes(key) ? keys.filter((k) => k !== key) : [...keys, key])
+}
+
+function clear() {
+  setKeys([])
+  hovered.value = null
+}
+
+/** marked positions, low string first, then by fret */
+const selectedList = computed(() =>
+  selectedKeys.value
+    .map((key) => {
+      const [c, fret] = key.split('-').map(Number)
+      return { key, c, fret, name: noteName(c, fret) }
+    })
+    .sort((a, b) => a.c - b.c || a.fret - b.fret),
+)
+
+/* hovering (or keyboard-focusing) one side previews the other */
+const hovered = ref(null)
+function unhover(key) {
+  if (hovered.value === key) hovered.value = null
+}
+
+function cellClass(key) {
+  return { 'is-selected': selectedSet.value.has(key), 'is-hover': hovered.value === key }
+}
+
+function cellEvents(key) {
+  return {
+    click: () => toggle(key),
+    keydown: (e) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        toggle(key)
+      }
+    },
+    pointerenter: (e) => {
+      if (e.pointerType !== 'touch') hovered.value = key
+    },
+    pointerleave: () => unhover(key),
+    focus: (e) => {
+      let keyboard = true
+      try {
+        keyboard = e.target.matches(':focus-visible')
+      } catch {
+        /* older browsers */
+      }
+      if (keyboard) hovered.value = key
+    },
+    blur: () => unhover(key),
+  }
+}
+
+function posLabel(c, fret) {
+  return `${CIRCLED[5 - c]} ${fret === 0 ? t('open') : t('fret', { n: fret })}`
+}
+
+function cellLabel(cell) {
+  return `${posLabel(cell.c, cell.fret)}: ${cell.name}`
+}
+
+defineExpose({ clear })
 </script>
 
 <style scoped>
+.fretboard-note-chart {
+  --_accent: var(--fnc-accent, var(--q-primary, #1976d2));
+}
+
+/* ----- toolbar ----- */
+.fnc-toolbar {
+  position: sticky;
+  top: var(--fnc-toolbar-top, 0px);
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 12px;
+  background: inherit;
+  border-bottom: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.fnc-selection {
+  flex: 1 1 auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 32px;
+}
+.fnc-chip {
+  margin: 0;
+  background: var(--_accent);
+  color: #fff;
+}
+.fnc-chip-pos {
+  margin-right: 0.5em;
+  opacity: 0.8;
+  font-variant-numeric: tabular-nums;
+}
+.fnc-hint {
+  font-size: 0.875rem;
+  opacity: 0.7;
+}
+
+/* ----- clickable cells ----- */
+.fnc-cell {
+  cursor: pointer;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.fnc-hit {
+  fill: var(--_accent);
+  fill-opacity: 0;
+  stroke: none;
+  transition: fill-opacity 0.12s;
+}
+.fnc-cell:focus-visible .fnc-hit {
+  stroke: var(--_accent);
+  stroke-width: 2;
+}
+
+/* notation: tint the cell and ink the note in the accent colour */
+.fnc-note.is-hover .fnc-hit {
+  fill-opacity: 0.07;
+}
+.fnc-note.is-selected .fnc-hit {
+  fill-opacity: 0.14;
+}
+.fnc-note.is-selected {
+  color: var(--_accent);
+}
+
+/* fretboard: finger dot (ring for an open string) */
+.fnc-marker {
+  fill: var(--_accent);
+  stroke: none;
+  pointer-events: none;
+  opacity: 0;
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: scale(0.6);
+  transition:
+    opacity 0.12s,
+    transform 0.18s cubic-bezier(0.3, 1.6, 0.5, 1);
+}
+.fnc-marker--open {
+  fill: none;
+  stroke: var(--_accent);
+  stroke-width: 3;
+}
+.fnc-pos.is-hover .fnc-marker {
+  opacity: 0.35;
+  transform: scale(1);
+}
+.fnc-pos.is-selected .fnc-marker {
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fnc-hit,
+  .fnc-marker {
+    transition: none;
+  }
+}
+
 .fretboard-note-chart__svg {
   display: block;
   width: 100%;
