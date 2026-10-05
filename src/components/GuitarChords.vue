@@ -279,7 +279,6 @@ watch(
       <q-option-group
         v-model="sign"
         :options="signOptions"
-        color="grey-10"
         type="checkbox"
         dense
         left-label
@@ -287,12 +286,11 @@ watch(
       />
       <q-separator vertical class="q-mx-sm" size="2px" />
       <label class="q-pt-sm q-pr-sm">m</label>
-      <q-toggle dense size="xs" v-model="minor" :color="!$q.dark.isActive ? 'black' : 'white'" />
+      <q-toggle dense size="xs" v-model="minor" />
       <q-separator vertical class="q-mx-sm" size="2px" />
       <q-option-group
         v-model="sus"
         :options="susOptions.filter((s) => s.label.length < 2)"
-        color="grey-10"
         type="checkbox"
         dense
         size="xs"
@@ -301,7 +299,6 @@ watch(
       <q-option-group
         v-model="sus"
         :options="susOptions.filter((s) => s.label.length == 3 || s.label == 'maj7')"
-        color="grey-10"
         type="checkbox"
         dense
         size="xs"
